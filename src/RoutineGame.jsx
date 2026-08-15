@@ -2,12 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import {
     FilesetResolver,
     HandLandmarker,
-    FaceDetector,
+    FaceLandmarker,
 } from "@mediapipe/tasks-vision";
 
 
 // ======================================================
-// 시간 포맷
+// 시간
 // ======================================================
 
 const formatTime = (seconds) => {
@@ -21,16 +21,7 @@ const formatTime = (seconds) => {
 
 
 // ======================================================
-// 선형 보간
-// ======================================================
-
-const lerp = (current, target, amount) => {
-    return current + (target - current) * amount;
-};
-
-
-// ======================================================
-// 거리 계산
+// 거리
 // ======================================================
 
 const getDistance = (a, b) => {
@@ -41,8 +32,236 @@ const getDistance = (a, b) => {
 };
 
 
+const lerp = (current, target, amount) => {
+    return current + (target - current) * amount;
+};
+
+
 // ======================================================
-// MAIN
+// 공 색상
+// ======================================================
+
+const BALL_TYPES = {
+    purple: {
+        name: "보라색",
+        color: "#7C73A7",
+    },
+
+    blue: {
+        name: "파란색",
+        color: "#8EA9B8",
+    },
+
+    gray: {
+        name: "회색",
+        color: "#9A9A9A",
+    },
+};
+
+
+// ======================================================
+// 미션
+// ======================================================
+
+const MISSIONS = [
+
+    {
+        id: "COLOR_SORT",
+
+        title: "같은 색깔 구역에 공 넣기",
+
+        description:
+            "공을 같은 색깔 영역으로 옮겨보세요",
+
+        type: "COLOR_SORT",
+    },
+
+    {
+        id: "SEQUENCE",
+
+        title: "순서대로 공 잡기",
+
+        description:
+            "보라색 → 파란색 → 회색 순서로 잡아보세요",
+
+        type: "SEQUENCE",
+    },
+
+    {
+        id: "MOVING_TARGET",
+
+        title: "움직이는 목표에 공 넣기",
+
+        description:
+            "움직이는 목표 영역 안에서 손을 펴보세요",
+
+        type: "MOVING_TARGET",
+    },
+
+    {
+        id: "SAME_COLOR",
+
+        title: "같은 색 3개 모으기",
+
+        description:
+            "같은 색 공 3개를 목표 영역으로 모아보세요",
+
+        type: "SAME_COLOR",
+    },
+
+    {
+        id: "TIME_ATTACK",
+
+        title: "20초 동안 공 3개 옮기기",
+
+        description:
+            "20초 안에 공 3개를 목표 영역으로 옮겨보세요",
+
+        type: "TIME_ATTACK",
+    },
+];
+
+
+// ======================================================
+// 랜덤 미션
+// ======================================================
+
+const getRandomMission = (excludeType = null) => {
+
+    const candidates = MISSIONS.filter(
+        item => item.type !== excludeType
+    );
+
+    const pool = candidates.length ? candidates : MISSIONS;
+    const index = Math.floor(Math.random() * pool.length);
+
+    return pool[index];
+};
+
+
+// ======================================================
+// 공 생성
+// ======================================================
+
+const createBall = (
+    id,
+    type,
+    x,
+    y
+) => {
+
+    return {
+
+        id,
+
+        type,
+
+        x,
+
+        y,
+
+        radius: 42,
+
+        grabbed: false,
+
+        grabbedBy: null,
+
+        grabOffsetX: 0,
+
+        grabOffsetY: 0,
+
+        releaseStartTime: null,
+    };
+};
+
+
+// ======================================================
+// 안전한 공 위치
+// ======================================================
+
+const getSafeBallPosition = (existing = []) => {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+        const candidate = {
+            x: 0.10 + Math.random() * 0.80,
+            y: 0.18 + Math.random() * 0.50,
+        };
+
+        if (existing.every(ball => getDistance(candidate, ball) > 0.18)) {
+            return candidate;
+        }
+    }
+
+    return { x: 0.50, y: 0.42 };
+};
+
+
+const createNormalBalls = () => {
+    const balls = [];
+    ["purple", "blue", "gray"].forEach((type, index) => {
+        const position = getSafeBallPosition(balls);
+        balls.push(createBall(`${type}-${index + 1}`, type, position.x, position.y));
+    });
+    return balls;
+};
+
+
+// ======================================================
+// 같은 색 3개
+// ======================================================
+
+const createSameColorBalls = () => {
+    const types = ["purple", "blue", "gray"];
+    const targetType = types[Math.floor(Math.random() * types.length)];
+    const balls = [];
+
+    for (let i = 0; i < 3; i += 1) {
+        const position = getSafeBallPosition(balls);
+        balls.push(createBall(`${targetType}-target-${i + 1}`, targetType, position.x, position.y));
+    }
+
+    types.filter(type => type !== targetType).forEach((type, index) => {
+        const position = getSafeBallPosition(balls);
+        balls.push(createBall(`${type}-distractor-${index + 1}`, type, position.x, position.y));
+    });
+
+    return { balls, targetType };
+};
+
+
+// ======================================================
+// 움직이는 목표 공 3개
+// ======================================================
+
+const createMovingTargetBalls = () => {
+    const balls = [];
+    ["purple", "blue", "gray"].forEach((type, index) => {
+        const position = getSafeBallPosition(balls);
+        balls.push(createBall(`moving-${type}-${index + 1}`, type, position.x, position.y));
+    });
+    return balls;
+};
+
+
+// ======================================================
+// 20초 타임어택 공 3개
+// ======================================================
+
+const createTimeAttackBalls = () => {
+    const balls = [];
+    const types = ["purple", "blue", "gray"];
+
+    for (let i = 0; i < 3; i += 1) {
+        const type = types[Math.floor(Math.random() * types.length)];
+        const position = getSafeBallPosition(balls);
+        balls.push(createBall(`time-${i + 1}`, type, position.x, position.y));
+    }
+
+    return balls;
+};
+
+
+// ======================================================
+// 컴포넌트
 // ======================================================
 
 function RoutineGame() {
@@ -51,99 +270,128 @@ function RoutineGame() {
     // DOM
     // ==================================================
 
-    const videoRef = useRef(null);
-    const canvasRef = useRef(null);
+    const videoRef =
+        useRef(null);
+
+    const canvasRef =
+        useRef(null);
 
 
     // ==================================================
     // MediaPipe
     // ==================================================
 
-    const handLandmarkerRef = useRef(null);
-    const faceDetectorRef = useRef(null);
-    const streamRef = useRef(null);
+    const handLandmarkerRef =
+        useRef(null);
+
+    const faceLandmarkerRef =
+        useRef(null);
+
+    const streamRef =
+        useRef(null);
 
 
     // ==================================================
-    // Animation
+    // 게임
     // ==================================================
 
-    const animationRef = useRef(null);
+    const animationRef =
+        useRef(null);
+
+    const handsRef =
+        useRef([]);
+
+    const ballsRef =
+        useRef([]);
 
 
     // ==================================================
-    // 손
+    // 미션
     // ==================================================
 
-    const handsRef = useRef([]);
+    const missionRef =
+        useRef(null);
+
+
+    // ==================================================
+    // 미션 진행
+    // ==================================================
+
+    const missionProgressRef =
+        useRef(0);
+
+    const sequenceIndexRef =
+        useRef(0);
+
+    const missionStartTimeRef =
+        useRef(null);
+
+
+    // ==================================================
+    // 움직이는 목표
+    // ==================================================
+
+    const movingTargetRef =
+        useRef({
+            x: 0.5,
+            y: 0.45,
+            radius: 0.11,
+            vx: 0.00042,
+            vy: 0.00024,
+        });
+
+    const sameColorTargetTypeRef =
+        useRef("purple");
 
 
     // ==================================================
     // 거리
     // ==================================================
 
-    const distanceRef = useRef({
-        value: 50,
-        status: "적정",
-    });
+    const distanceRef =
+        useRef({
 
-    const lastDistanceUpdateRef = useRef(0);
+            value: 50,
+
+            status: "적정",
+
+        });
+
+
+    const lastDistanceUpdateRef =
+        useRef(0);
+
+
+    const faceLostCountRef =
+        useRef(0);
 
 
     // ==================================================
-    // 공 초기값
+    // 설정
     // ==================================================
 
-    const createInitialBalls = () => [
-        {
-            id: 0,
+    const CONFIG = {
 
-            x: 0.42,
-            y: 0.32,
+        positionSmooth: 0.32,
 
-            radius: 42,
+        fistEnterThreshold: 3.7,
 
-            color: "#8EA9B8",
+        fistExitThreshold: 2.4,
 
-            grabbed: false,
-            grabbedBy: null,
+        grabDistance: 0.10,
 
-            grabOffsetX: 0,
-            grabOffsetY: 0,
+        ballFollowSmooth: 0.35,
 
-            releaseStartTime: null,
+        releaseDelay: 120,
 
-            targetX: 0.42,
-            targetY: 0.32,
-        },
+        lostHandGraceTime: 350,
 
-        {
-            id: 1,
+        distanceUpdateInterval: 100,
 
-            x: 0.58,
-            y: 0.50,
+        faceLostMaxFrames: 15,
+        timeAttackDuration: 20,
 
-            radius: 42,
-
-            color: "#7C73A7",
-
-            grabbed: false,
-            grabbedBy: null,
-
-            grabOffsetX: 0,
-            grabOffsetY: 0,
-
-            releaseStartTime: null,
-
-            targetX: 0.58,
-            targetY: 0.50,
-        },
-    ];
-
-
-    const ballsRef = useRef(
-        createInitialBalls()
-    );
+    };
 
 
     // ==================================================
@@ -156,428 +404,448 @@ function RoutineGame() {
     const [isRunning, setIsRunning] =
         useState(true);
 
-    const [timeLeft, setTimeLeft] =
-        useState(180);
+    const [elapsedTime, setElapsedTime] =
+        useState(0);
 
-    const [score, setScore] =
+    const [successCount, setSuccessCount] =
         useState(0);
 
     const [handCount, setHandCount] =
         useState(0);
 
-    const [step, setStep] =
-        useState(1);
-
     const [screenDistance, setScreenDistance] =
         useState({
+
             value: 50,
+
             status: "적정",
+
         });
 
 
+    const [mission, setMission] =
+        useState(() =>
+            getRandomMission()
+        );
+
+
+    const [missionStatus, setMissionStatus] =
+        useState("playing");
+
+
+    const [missionProgress, setMissionProgress] =
+        useState(0);
+
+
+    const [sequenceIndex, setSequenceIndex] =
+        useState(0);
+
+
+    const [missionRemaining, setMissionRemaining] =
+        useState(CONFIG.timeAttackDuration);
+
+
     // ==================================================
-    // 설정
+    // 미션 Ref 초기화
     // ==================================================
 
-    const CONFIG = {
+    const setupMission = (nextMission) => {
 
-        // 손 움직임 부드러움
-        positionSmooth: 0.30,
+        missionRef.current = nextMission;
+        missionProgressRef.current = 0;
+        sequenceIndexRef.current = 0;
+        missionStartTimeRef.current = performance.now();
 
-        // 주먹 판정
-        fistEnterThreshold: 3.7,
-        fistExitThreshold: 2.4,
+        setMissionProgress(0);
+        setSequenceIndex(0);
+        setMissionRemaining(
+            nextMission.type === "TIME_ATTACK"
+                ? CONFIG.timeAttackDuration
+                : 60
+        );
+        setMissionStatus("playing");
+        setIsRunning(true);
 
-        // 공을 잡을 수 있는 거리
-        grabDistance: 0.09,
-
-        // 공이 손을 따라가는 속도
-        ballFollowSmooth: 0.24,
-
-        // 손을 폈을 때 공을 놓기까지
-        releaseDelay: 100,
-
-        // 손 인식이 잠깐 끊겨도 유지
-        lostHandGraceTime: 500,
-
-        // 거리 업데이트
-        distanceUpdateInterval: 100,
+        if (nextMission.type === "SAME_COLOR") {
+            const sameColor = createSameColorBalls();
+            sameColorTargetTypeRef.current = sameColor.targetType;
+            ballsRef.current = sameColor.balls;
+        } else if (nextMission.type === "MOVING_TARGET") {
+            ballsRef.current = createMovingTargetBalls();
+            movingTargetRef.current = {
+                x: 0.22 + Math.random() * 0.56,
+                y: 0.28 + Math.random() * 0.28,
+                radius: 0.11,
+                vx: (Math.random() > 0.5 ? 1 : -1) * 0.00042,
+                vy: (Math.random() > 0.5 ? 1 : -1) * 0.00024,
+            };
+        } else if (nextMission.type === "TIME_ATTACK") {
+            ballsRef.current = createTimeAttackBalls();
+        } else {
+            ballsRef.current = createNormalBalls();
+        }
     };
 
 
+    useEffect(() => {
+        setupMission(mission);
+    }, [mission]);
+
+
     // ==================================================
-    // 손바닥 중심
+    // 손바닥
     // ==================================================
 
-    const getPalmCenter = (landmarks) => {
+    const getPalmCenter =
+        (landmarks) => {
 
-        const points = [
-            landmarks[0],
-            landmarks[5],
-            landmarks[9],
-            landmarks[13],
-            landmarks[17],
-        ];
+            const points = [
 
-        let x = 0;
-        let y = 0;
+                landmarks[0],
 
-        points.forEach((point) => {
-            x += point.x;
-            y += point.y;
-        });
+                landmarks[5],
 
-        return {
-            x: x / points.length,
-            y: y / points.length,
+                landmarks[9],
+
+                landmarks[13],
+
+                landmarks[17],
+
+            ];
+
+
+            let x = 0;
+
+            let y = 0;
+
+
+            points.forEach(
+                point => {
+
+                    x += point.x;
+
+                    y += point.y;
+
+                }
+            );
+
+
+            return {
+
+                x:
+                    x /
+                    points.length,
+
+                y:
+                    y /
+                    points.length,
+
+            };
         };
-    };
 
 
     // ==================================================
     // 주먹 점수
     // ==================================================
 
-    const getFistScore = (landmarks) => {
+    const getFistScore =
+        (landmarks) => {
 
-        const wrist = landmarks[0];
-
-        const fingers = [
-            {
-                mcp: 5,
-                pip: 6,
-                dip: 7,
-                tip: 8,
-            },
-
-            {
-                mcp: 9,
-                pip: 10,
-                dip: 11,
-                tip: 12,
-            },
-
-            {
-                mcp: 13,
-                pip: 14,
-                dip: 15,
-                tip: 16,
-            },
-
-            {
-                mcp: 17,
-                pip: 18,
-                dip: 19,
-                tip: 20,
-            },
-        ];
-
-        let score = 0;
-
-        fingers.forEach(
-            ({
-                mcp,
-                pip,
-                dip,
-                tip,
-            }) => {
-
-                const mcpDistance =
-                    getDistance(
-                        landmarks[mcp],
-                        wrist
-                    );
-
-                const pipDistance =
-                    getDistance(
-                        landmarks[pip],
-                        wrist
-                    );
-
-                const dipDistance =
-                    getDistance(
-                        landmarks[dip],
-                        wrist
-                    );
-
-                const tipDistance =
-                    getDistance(
-                        landmarks[tip],
-                        wrist
-                    );
+            const wrist =
+                landmarks[0];
 
 
-                if (
-                    tipDistance <
-                    mcpDistance * 1.35
-                ) {
-                    score += 0.75;
+            const fingers = [
+
+                {
+                    mcp: 5,
+                    pip: 6,
+                    dip: 7,
+                    tip: 8,
+                },
+
+                {
+                    mcp: 9,
+                    pip: 10,
+                    dip: 11,
+                    tip: 12,
+                },
+
+                {
+                    mcp: 13,
+                    pip: 14,
+                    dip: 15,
+                    tip: 16,
+                },
+
+                {
+                    mcp: 17,
+                    pip: 18,
+                    dip: 19,
+                    tip: 20,
+                },
+
+            ];
+
+
+            let score = 0;
+
+
+            fingers.forEach(
+                ({
+                    mcp,
+                    pip,
+                    dip,
+                    tip,
+                }) => {
+
+                    const mcpDistance =
+                        getDistance(
+                            landmarks[mcp],
+                            wrist
+                        );
+
+
+                    const pipDistance =
+                        getDistance(
+                            landmarks[pip],
+                            wrist
+                        );
+
+
+                    const dipDistance =
+                        getDistance(
+                            landmarks[dip],
+                            wrist
+                        );
+
+
+                    const tipDistance =
+                        getDistance(
+                            landmarks[tip],
+                            wrist
+                        );
+
+
+                    if (
+                        tipDistance <
+                        mcpDistance * 1.35
+                    ) {
+
+                        score += 0.75;
+
+                    }
+
+
+                    if (
+                        tipDistance <
+                        pipDistance * 1.25
+                    ) {
+
+                        score += 0.5;
+
+                    }
+
+
+                    if (
+                        tipDistance <
+                        dipDistance * 1.18
+                    ) {
+
+                        score += 0.35;
+
+                    }
+
                 }
+            );
 
 
-                if (
-                    tipDistance <
-                    pipDistance * 1.25
-                ) {
-                    score += 0.5;
-                }
+            return score;
+        };
 
 
-                if (
-                    tipDistance <
-                    dipDistance * 1.18
-                ) {
-                    score += 0.35;
-                }
+    // ==================================================
+    // 주먹
+    // ==================================================
+
+    const updateFistState =
+        (
+            previous,
+            score
+        ) => {
+
+            if (previous) {
+
+                return (
+                    score >
+                    CONFIG.fistExitThreshold
+                );
+
             }
-        );
-
-        return score;
-    };
 
 
-    // ==================================================
-    // 주먹 상태
-    // ==================================================
-
-    const updateFistState = (
-        previous,
-        score
-    ) => {
-
-        if (previous) {
             return (
                 score >
-                CONFIG.fistExitThreshold
+                CONFIG.fistEnterThreshold
             );
-        }
-
-        return (
-            score >
-            CONFIG.fistEnterThreshold
-        );
-    };
-
-
-    // ==================================================
-    // 안정적인 손 위치
-    // ==================================================
-
-    const getStableHandPosition = (
-        landmarks,
-        previousHand
-    ) => {
-
-        const palm =
-            getPalmCenter(landmarks);
-
-        const wrist =
-            landmarks[0];
-
-        const middleBase =
-            landmarks[9];
-
-
-        const stableX =
-            palm.x * 0.65 +
-            middleBase.x * 0.25 +
-            wrist.x * 0.10;
-
-
-        const stableY =
-            palm.y * 0.65 +
-            middleBase.y * 0.25 +
-            wrist.y * 0.10;
-
-
-        const targetX =
-            1 - stableX;
-
-        const targetY =
-            stableY;
-
-
-        if (!previousHand) {
-            return {
-                x: targetX,
-                y: targetY,
-            };
-        }
-
-
-        return {
-            x: lerp(
-                previousHand.x,
-                targetX,
-                CONFIG.positionSmooth
-            ),
-
-            y: lerp(
-                previousHand.y,
-                targetY,
-                CONFIG.positionSmooth
-            ),
         };
-    };
 
 
     // ==================================================
-    // 카메라 시작
+    // 손 위치
     // ==================================================
 
-    const startCamera = async () => {
+    const getStableHandPosition =
+        (
+            landmarks,
+            previousHand
+        ) => {
 
-        try {
-
-            const stream =
-                await navigator.mediaDevices.getUserMedia(
-                    {
-                        video: {
-                            width: 1280,
-                            height: 720,
-                            facingMode: "user",
-                        },
-
-                        audio: false,
-                    }
+            const palm =
+                getPalmCenter(
+                    landmarks
                 );
 
 
-            streamRef.current =
-                stream;
+            const wrist =
+                landmarks[0];
 
 
-            if (!videoRef.current) {
-                return;
+            const middleBase =
+                landmarks[9];
+
+
+            const stableX =
+
+                palm.x * 0.65 +
+
+                middleBase.x * 0.25 +
+
+                wrist.x * 0.10;
+
+
+            const stableY =
+
+                palm.y * 0.65 +
+
+                middleBase.y * 0.25 +
+
+                wrist.y * 0.10;
+
+
+            const targetX =
+                1 - stableX;
+
+
+            const targetY =
+                stableY;
+
+
+            if (!previousHand) {
+
+                return {
+
+                    x: targetX,
+
+                    y: targetY,
+
+                };
             }
 
 
-            videoRef.current.srcObject =
-                stream;
+            return {
 
+                x:
+                    lerp(
+                        previousHand.x,
+                        targetX,
+                        CONFIG.positionSmooth
+                    ),
 
-            await new Promise(
-                (resolve) => {
+                y:
+                    lerp(
+                        previousHand.y,
+                        targetY,
+                        CONFIG.positionSmooth
+                    ),
 
-                    videoRef.current.onloadedmetadata =
-                        resolve;
-
-                }
-            );
-
-
-            await videoRef.current.play();
-
-
-            setCameraReady(true);
-
-
-            console.log(
-                "카메라 시작 성공"
-            );
-
-        } catch (error) {
-
-            console.error(
-                "카메라 시작 실패:",
-                error
-            );
-
-        }
-    };
+            };
+        };
 
 
     // ==================================================
-    // MediaPipe 초기화
+    // 카메라
     // ==================================================
 
-    const initializeMediaPipe =
+    const startCamera =
         async () => {
 
             try {
 
-                const vision =
-                    await FilesetResolver.forVisionTasks(
-                        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
-                    );
+                const stream =
+                    await navigator
+                        .mediaDevices
+                        .getUserMedia({
 
+                            video: {
 
-                // ======================================
-                // Hand Landmarker
-                // ======================================
+                                width: {
+                                    ideal: 1280,
+                                },
 
-                const handLandmarker =
-                    await HandLandmarker.createFromOptions(
-                        vision,
-                        {
-                            baseOptions: {
+                                height: {
+                                    ideal: 720,
+                                },
 
-                                modelAssetPath:
-                                    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                                facingMode:
+                                    "user",
 
-                                delegate:
-                                    "GPU",
                             },
 
-                            runningMode:
-                                "VIDEO",
+                            audio: false,
 
-                            numHands: 2,
-
-                            minHandDetectionConfidence:
-                                0.55,
-
-                            minHandPresenceConfidence:
-                                0.55,
-
-                            minTrackingConfidence:
-                                0.55,
-                        }
-                    );
+                        });
 
 
-                handLandmarkerRef.current =
-                    handLandmarker;
+                streamRef.current =
+                    stream;
 
 
-                // ======================================
-                // Face Detector
-                // ======================================
+                if (
+                    !videoRef.current
+                ) {
 
-                const faceDetector =
-                    await FaceDetector.createFromOptions(
-                        vision,
-                        {
-                            baseOptions: {
-
-                                modelAssetPath:
-                                    "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
-
-                                delegate:
-                                    "GPU",
-                            },
-
-                            runningMode:
-                                "VIDEO",
-
-                            minDetectionConfidence:
-                                0.5,
-                        }
-                    );
+                    return;
+                }
 
 
-                faceDetectorRef.current =
-                    faceDetector;
+                videoRef.current
+                    .srcObject =
+                    stream;
 
 
-                console.log(
-                    "MediaPipe 초기화 성공"
+                await new Promise(
+                    resolve => {
+
+                        videoRef.current
+                            .onloadedmetadata =
+                            resolve;
+
+                    }
                 );
+
+
+                await videoRef.current
+                    .play();
+
+
+                setCameraReady(true);
+
 
             } catch (error) {
 
                 console.error(
-                    "MediaPipe 초기화 실패:",
+                    "카메라 시작 실패",
                     error
                 );
 
@@ -586,225 +854,355 @@ function RoutineGame() {
 
 
     // ==================================================
-    // 화면 거리 측정
+    // MediaPipe
     // ==================================================
 
-    const detectScreenDistance = (
-        video,
-        timestamp
-    ) => {
+    const initializeMediaPipe =
+        async () => {
 
-        if (
-            !faceDetectorRef.current ||
-            !video ||
-            !video.videoWidth
-        ) {
-            return;
-        }
+            try {
+
+                const vision =
+                    await FilesetResolver
+                        .forVisionTasks(
+
+                            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
+
+                        );
 
 
-        try {
+                const handLandmarker =
+                    await HandLandmarker
+                        .createFromOptions(
 
-            const result =
-                faceDetectorRef.current.detectForVideo(
-                    video,
-                    timestamp
+                            vision,
+
+                            {
+
+                                baseOptions: {
+
+                                    modelAssetPath:
+
+                                        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+
+                                    delegate:
+                                        "GPU",
+
+                                },
+
+                                runningMode:
+                                    "VIDEO",
+
+                                numHands: 2,
+
+                                minHandDetectionConfidence:
+                                    0.55,
+
+                                minHandPresenceConfidence:
+                                    0.55,
+
+                                minTrackingConfidence:
+                                    0.55,
+
+                            }
+
+                        );
+
+
+                handLandmarkerRef.current =
+                    handLandmarker;
+
+
+                const faceLandmarker =
+                    await FaceLandmarker
+                        .createFromOptions(
+
+                            vision,
+
+                            {
+
+                                baseOptions: {
+
+                                    modelAssetPath:
+
+                                        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+
+                                    delegate:
+                                        "GPU",
+
+                                },
+
+                                runningMode:
+                                    "VIDEO",
+
+                                numFaces: 1,
+
+                                minFaceDetectionConfidence:
+                                    0.3,
+
+                                minFacePresenceConfidence:
+                                    0.3,
+
+                                minTrackingConfidence:
+                                    0.3,
+
+                            }
+
+                        );
+
+
+                faceLandmarkerRef.current =
+                    faceLandmarker;
+
+
+            } catch (error) {
+
+                console.error(
+                    "MediaPipe 초기화 실패",
+                    error
                 );
 
+            }
+        };
+
+
+    // ==================================================
+    // 얼굴 거리
+    // ==================================================
+
+    const detectScreenDistance =
+        (
+            video,
+            timestamp
+        ) => {
 
             if (
-                !result.detections ||
-                result.detections.length === 0
+                !faceLandmarkerRef.current ||
+                !video ||
+                video.readyState < 2
             ) {
+
                 return;
             }
 
 
-            const detection =
-                result.detections.reduce(
-                    (
-                        largest,
-                        current
-                    ) => {
+            try {
 
-                        const largestBox =
-                            largest.boundingBox;
-
-                        const currentBox =
-                            current.boundingBox;
+                const result =
+                    faceLandmarkerRef.current
+                        .detectForVideo(
+                            video,
+                            timestamp
+                        );
 
 
-                        const largestArea =
-                            largestBox.width *
-                            largestBox.height;
+                if (
+                    !result.faceLandmarks ||
+                    result.faceLandmarks.length === 0
+                ) {
+
+                    faceLostCountRef.current += 1;
 
 
-                        const currentArea =
-                            currentBox.width *
-                            currentBox.height;
+                    if (
+                        faceLostCountRef.current <
+                        CONFIG.faceLostMaxFrames
+                    ) {
 
-
-                        return (
-                            currentArea >
-                            largestArea
-                        )
-                            ? current
-                            : largest;
+                        return;
                     }
-                );
 
 
-            const box =
-                detection.boundingBox;
+                    setScreenDistance({
+
+                        value: 5,
+
+                        status: "너무 멂",
+
+                    });
 
 
-            const widthRatio =
-                box.width /
-                video.videoWidth;
+                    return;
+                }
 
 
-            // =========================================
-            // 거리 기준
-            //
-            // 0.28 이상 : 너무 가까움
-            // 0.10~0.28 : 적정
-            // 0.10 이하 : 너무 멂
-            // =========================================
-
-            let status;
-            let value;
+                faceLostCountRef.current =
+                    0;
 
 
-            if (
-                widthRatio >= 0.28
-            ) {
-
-                status =
-                    "너무 가까움";
+                const landmarks =
+                    result.faceLandmarks[0];
 
 
-                value =
-                    72 +
-                    Math.min(
-                        28,
-                        (
-                            widthRatio -
-                            0.28
-                        ) * 140
+                const left =
+                    landmarks[234];
+
+                const right =
+                    landmarks[454];
+
+
+                if (
+                    !left ||
+                    !right
+                ) {
+
+                    return;
+                }
+
+
+                const faceWidth =
+                    Math.abs(
+                        right.x -
+                        left.x
                     );
 
-            } else if (
-                widthRatio >= 0.10
-            ) {
 
-                status =
-                    "적정";
+                let status;
 
 
-                value =
-                    30 +
-                    (
+                if (
+                    faceWidth < 0.075
+                ) {
+
+                    status =
+                        "너무 멂";
+
+                } else if (
+                    faceWidth < 0.17
+                ) {
+
+                    status =
+                        "적정";
+
+                } else {
+
+                    status =
+                        "너무 가까움";
+                }
+
+
+                let value;
+
+
+                if (
+                    faceWidth < 0.075
+                ) {
+
+                    value =
                         (
-                            0.28 -
-                            widthRatio
-                        ) /
-                        0.18
-                    ) * 40;
+                            faceWidth /
+                            0.075
+                        ) *
+                        35;
 
-            } else {
+                } else if (
+                    faceWidth < 0.17
+                ) {
 
-                status =
-                    "너무 멂";
+                    value =
+                        35 +
+                        (
+                            (
+                                faceWidth -
+                                0.075
+                            ) /
+                            0.095
+                        ) *
+                        30;
+
+                } else {
+
+                    value =
+                        65 +
+                        Math.min(
+                            35,
+
+                            (
+                                (
+                                    faceWidth -
+                                    0.17
+                                ) /
+                                0.12
+                            ) *
+                            35
+                        );
+                }
 
 
                 value =
                     Math.max(
                         0,
-                        30 -
-                        (
-                            0.10 -
-                            widthRatio
-                        ) * 120
+                        Math.min(
+                            100,
+                            value
+                        )
                     );
-            }
 
 
-            value =
-                Math.max(
-                    0,
-                    Math.min(
-                        100,
-                        value
-                    )
-                );
+                const smooth =
+                    distanceRef.current
+                        .value *
+                        0.75 +
+                    value *
+                        0.25;
 
 
-            const previous =
-                distanceRef.current.value;
+                distanceRef.current = {
 
-
-            const smoothValue =
-                previous * 0.8 +
-                value * 0.2;
-
-
-            distanceRef.current = {
-                value:
-                    smoothValue,
-
-                status:
-                    status,
-            };
-
-
-            if (
-                timestamp -
-                    lastDistanceUpdateRef.current >=
-                CONFIG.distanceUpdateInterval
-            ) {
-
-                lastDistanceUpdateRef.current =
-                    timestamp;
-
-
-                setScreenDistance({
                     value:
-                        smoothValue,
+                        smooth,
 
-                    status:
+                    status,
+
+                };
+
+
+                if (
+                    timestamp -
+                    lastDistanceUpdateRef.current >
+                    CONFIG.distanceUpdateInterval
+                ) {
+
+                    lastDistanceUpdateRef.current =
+                        timestamp;
+
+
+                    setScreenDistance({
+
+                        value:
+                            smooth,
+
                         status,
-                });
+
+                    });
+                }
+
+            } catch (error) {
+
+                console.error(
+                    "거리 측정 오류",
+                    error
+                );
             }
-
-        } catch (error) {
-
-            console.error(
-                "거리 측정 오류:",
-                error
-            );
-
-        }
-    };
+        };
 
 
     // ==================================================
     // 손 인식
     // ==================================================
 
-    const detectHands = (
-        timestamp
-    ) => {
+    const detectHands =
+        (timestamp) => {
 
-        if (
-            !videoRef.current ||
-            !handLandmarkerRef.current ||
-            videoRef.current.readyState < 2
-        ) {
-            return;
-        }
+            if (
+                !videoRef.current ||
+                !handLandmarkerRef.current ||
+                videoRef.current.readyState < 2
+            ) {
 
+                return;
+            }
 
-        try {
 
             detectScreenDistance(
                 videoRef.current,
@@ -812,1247 +1210,1806 @@ function RoutineGame() {
             );
 
 
-            const result =
-                handLandmarkerRef.current.detectForVideo(
-                    videoRef.current,
-                    timestamp
-                );
+            try {
+
+                const result =
+                    handLandmarkerRef.current
+                        .detectForVideo(
+
+                            videoRef.current,
+
+                            timestamp
+
+                        );
 
 
-            const previousHands =
-                handsRef.current;
+                const previousHands =
+                    handsRef.current;
 
 
-            const detectedHands = [];
+                const detectedHands = [];
 
 
-            if (
-                result.landmarks
-            ) {
+                if (
+                    result.landmarks
+                ) {
 
-                result.landmarks.forEach(
-                    (landmarks) => {
-
-                        const palm =
-                            getPalmCenter(
+                    result.landmarks
+                        .forEach(
+                            (
                                 landmarks
-                            );
+                            ) => {
+
+                                const palm =
+                                    getPalmCenter(
+                                        landmarks
+                                    );
 
 
-                        const rawX =
-                            1 - palm.x;
+                                const rawX =
+                                    1 - palm.x;
 
 
-                        const rawY =
-                            palm.y;
+                                const rawY =
+                                    palm.y;
 
 
-                        let previousHand =
-                            null;
+                                let previousHand =
+                                    null;
 
 
-                        let closest =
-                            Infinity;
+                                let closest =
+                                    Infinity;
 
 
-                        previousHands.forEach(
-                            (hand) => {
+                                previousHands
+                                    .forEach(
+                                        hand => {
 
-                                const distance =
-                                    Math.sqrt(
-                                        Math.pow(
-                                            hand.x -
-                                            rawX,
-                                            2
-                                        ) +
-                                        Math.pow(
-                                            hand.y -
-                                            rawY,
-                                            2
-                                        )
+                                            const distance =
+                                                getDistance(
+                                                    hand,
+                                                    {
+                                                        x: rawX,
+                                                        y: rawY,
+                                                    }
+                                                );
+
+
+                                            if (
+                                                distance <
+                                                closest
+                                            ) {
+
+                                                closest =
+                                                    distance;
+
+                                                previousHand =
+                                                    hand;
+
+                                            }
+
+                                        }
                                     );
 
 
                                 if (
-                                    distance <
-                                    closest
+                                    closest >
+                                    0.4
                                 ) {
 
-                                    closest =
-                                        distance;
-
                                     previousHand =
-                                        hand;
+                                        null;
+
                                 }
+
+
+                                const position =
+                                    getStableHandPosition(
+                                        landmarks,
+                                        previousHand
+                                    );
+
+
+                                const fistScore =
+                                    getFistScore(
+                                        landmarks
+                                    );
+
+
+                                const fist =
+                                    updateFistState(
+
+                                        previousHand?.fist ??
+                                            false,
+
+                                        fistScore
+
+                                    );
+
+                                // 공을 잡는 동작은 "주먹을 쥐고 있는 상태"가 아니라
+                                // "펴진 손 -> 주먹으로 접히는 순간"에만 허용한다.
+                                // 따라서 주먹을 쥔 채 공 쪽으로 이동해도 공이 자동으로 붙지 않는다.
+                                const fistJustClosed =
+                                    fist &&
+                                    !(previousHand?.fist ?? false);
+
+
+                                detectedHands
+                                    .push({
+
+                                        id:
+                                            previousHand?.id ??
+                                            `hand-${Math.random()}`,
+
+                                        x:
+                                            position.x,
+
+                                        y:
+                                            position.y,
+
+                                        fist,
+
+                                        fistJustClosed,
+
+                                        fistScore,
+
+                                        landmarks,
+
+                                        lastSeen:
+                                            timestamp,
+
+                                    });
 
                             }
                         );
+                }
+
+
+                previousHands.forEach(
+                    previous => {
+
+                        const exists =
+                            detectedHands
+                                .some(
+                                    hand =>
+                                        hand.id ===
+                                        previous.id
+                                );
 
 
                         if (
-                            closest > 0.40
+                            !exists &&
+                            timestamp -
+                            previous.lastSeen <
+                            CONFIG.lostHandGraceTime
                         ) {
 
-                            previousHand =
-                                null;
+                            detectedHands
+                                .push({
+                                    ...previous,
+                                });
                         }
-
-
-                        const position =
-                            getStableHandPosition(
-                                landmarks,
-                                previousHand
-                            );
-
-
-                        const fistScore =
-                            getFistScore(
-                                landmarks
-                            );
-
-
-                        const fist =
-                            updateFistState(
-                                previousHand?.fist ??
-                                    false,
-                                fistScore
-                            );
-
-
-                        detectedHands.push({
-
-                            id:
-                                previousHand?.id ??
-                                `hand-${Date.now()}-${Math.random()}`,
-
-                            x:
-                                position.x,
-
-                            y:
-                                position.y,
-
-                            fist:
-                                fist,
-
-                            fistScore:
-                                fistScore,
-
-                            landmarks:
-                                landmarks,
-
-                            lastSeen:
-                                timestamp,
-                        });
 
                     }
                 );
 
+
+                handsRef.current =
+                    detectedHands;
+
+
+                setHandCount(
+                    result.landmarks?.length || 0
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "손 인식 오류",
+                    error
+                );
+            }
+        };
+
+
+    // ==================================================
+    // 목표 영역
+    // ==================================================
+
+    const getTargetZone =
+        (ball) => {
+
+            const missionType =
+                mission.type;
+
+
+            if (
+                missionType ===
+                "COLOR_SORT"
+            ) {
+
+                if (
+                    ball.type ===
+                    "purple"
+                ) {
+
+                    return {
+                        x: 0.25,
+                        y: 0.78,
+                        radius: 0.11,
+                        color:
+                            "#7C73A7",
+                    };
+
+                }
+
+
+                if (
+                    ball.type ===
+                    "blue"
+                ) {
+
+                    return {
+                        x: 0.50,
+                        y: 0.78,
+                        radius: 0.11,
+                        color:
+                            "#8EA9B8",
+                    };
+
+                }
+
+
+                return {
+
+                    x: 0.75,
+
+                    y: 0.78,
+
+                    radius: 0.11,
+
+                    color:
+                        "#9A9A9A",
+
+                };
             }
 
 
-            // ==================================================
-            // 손이 잠깐 사라져도 유지
-            // ==================================================
+            if (
+                missionType ===
+                "MOVING_TARGET"
+            ) {
 
-            const finalHands = [
-                ...detectedHands,
-            ];
+                return {
+                    ...movingTargetRef.current,
+                };
+            }
 
 
-            previousHands.forEach(
-                (previous) => {
+            if (
+                missionType ===
+                "SAME_COLOR"
+            ) {
 
-                    const exists =
-                        finalHands.some(
-                            (hand) =>
-                                hand.id ===
-                                previous.id
-                        );
+                return {
 
+                    x: 0.50,
+
+                    y: 0.78,
+
+                    radius: 0.13,
+
+                    color:
+                        BALL_TYPES[
+                            sameColorTargetTypeRef.current
+                        ].color,
+
+                };
+            }
+
+
+            if (
+                missionType ===
+                "TIME_ATTACK"
+            ) {
+
+                return {
+
+                    x: 0.50,
+
+                    y: 0.76,
+
+                    radius: 0.12,
+
+                    color:
+                        "#8EA9B8",
+
+                };
+            }
+
+
+            return {
+
+                x: 0.5,
+
+                y: 0.78,
+
+                radius: 0.12,
+
+                color:
+                    "#777",
+
+            };
+        };
+
+
+    // ==================================================
+    // 목표 영역 안인지
+    // ==================================================
+
+    const isInsideTarget =
+        (
+            ball,
+            target
+        ) => {
+
+            return (
+                getDistance(
+                    ball,
+                    target
+                ) <
+                target.radius
+            );
+        };
+
+
+    // ==================================================
+    // 다음 미션
+    // ==================================================
+
+    const goToNextMission = (countSuccess = false) => {
+        if (countSuccess) {
+            setSuccessCount(previous => previous + 1);
+        }
+
+        setMission(getRandomMission(mission.type));
+    };
+
+
+    const completeMission = () => {
+        goToNextMission(true);
+    };
+
+
+    const failMission = () => {
+        goToNextMission(false);
+    };
+
+
+    // 공 놓기 판정
+    // ==================================================
+
+    const handleBallRelease =
+        (
+            ball,
+            target
+        ) => {
+
+            // ------------------------------------------
+            // 같은 색깔 구역에 공 넣기
+            // 3개의 공을 모두 올바른 색 구역에 넣어야 성공
+            // ------------------------------------------
+
+            if (
+                mission.type ===
+                "COLOR_SORT"
+            ) {
+
+                if (
+                    isInsideTarget(
+                        ball,
+                        target
+                    )
+                ) {
+
+                    missionProgressRef.current += 1;
+
+                    setMissionProgress(
+                        missionProgressRef.current
+                    );
+
+                    ball.x = -1;
+                    ball.y = -1;
 
                     if (
-                        !exists &&
-                        timestamp -
-                            previous.lastSeen <
-                            CONFIG.lostHandGraceTime
+                        missionProgressRef.current >= 3
                     ) {
-
-                        finalHands.push({
-                            ...previous,
-                        });
-
+                        completeMission();
                     }
-
                 }
-            );
+
+                return;
+            }
 
 
-            handsRef.current =
-                finalHands;
+            // ------------------------------------------
+            // 순서대로 공 잡았다 놓기
+            // 목표 영역은 필요 없다.
+            // ------------------------------------------
+
+            if (
+                mission.type ===
+                "SEQUENCE"
+            ) {
+
+                const sequence = [
+                    "purple",
+                    "blue",
+                    "gray",
+                ];
+
+                const expected =
+                    sequence[
+                        sequenceIndexRef.current
+                    ];
+
+                if (
+                    ball.type !==
+                    expected
+                ) {
+                    failMission();
+                    return;
+                }
+
+                sequenceIndexRef.current += 1;
+
+                setSequenceIndex(
+                    sequenceIndexRef.current
+                );
+
+                ball.x = -1;
+                ball.y = -1;
+
+                if (
+                    sequenceIndexRef.current >=
+                    sequence.length
+                ) {
+                    completeMission();
+                }
+
+                return;
+            }
 
 
-            setHandCount(
-                detectedHands.length
-            );
+            // ------------------------------------------
+            // 움직이는 목표
+            // 공 3개를 모두 목표 안에 넣어야 성공
+            // ------------------------------------------
 
-        } catch (error) {
+            if (
+                mission.type ===
+                "MOVING_TARGET"
+            ) {
 
-            console.error(
-                "손 인식 오류:",
-                error
-            );
+                if (
+                    isInsideTarget(
+                        ball,
+                        target
+                    )
+                ) {
 
-        }
-    };
+                    missionProgressRef.current += 1;
+
+                    setMissionProgress(
+                        missionProgressRef.current
+                    );
+
+                    ball.x = -1;
+                    ball.y = -1;
+
+                    if (
+                        missionProgressRef.current >= 3
+                    ) {
+                        completeMission();
+                    }
+                }
+
+                return;
+            }
+
+
+            // ------------------------------------------
+            // 같은 색 3개 모으기
+            // ------------------------------------------
+
+            if (
+                mission.type ===
+                "SAME_COLOR"
+            ) {
+
+                if (
+                    ball.type !==
+                    sameColorTargetTypeRef.current
+                ) {
+                    return;
+                }
+
+                if (
+                    isInsideTarget(
+                        ball,
+                        target
+                    )
+                ) {
+
+                    missionProgressRef.current += 1;
+
+                    setMissionProgress(
+                        missionProgressRef.current
+                    );
+
+                    ball.x = -1;
+                    ball.y = -1;
+
+                    if (
+                        missionProgressRef.current >= 3
+                    ) {
+                        completeMission();
+                    }
+                }
+
+                return;
+            }
+
+
+            // ------------------------------------------
+            // 20초 동안 공 3개 옮기기
+            // ------------------------------------------
+
+            if (
+                mission.type ===
+                "TIME_ATTACK"
+            ) {
+
+                if (
+                    isInsideTarget(
+                        ball,
+                        target
+                    )
+                ) {
+
+                    missionProgressRef.current += 1;
+
+                    setMissionProgress(
+                        missionProgressRef.current
+                    );
+
+                    ball.x = -1;
+                    ball.y = -1;
+
+                    if (
+                        missionProgressRef.current >= 3
+                    ) {
+                        completeMission();
+                    }
+                }
+            }
+        };
 
 
     // ==================================================
     // 공 업데이트
     // ==================================================
 
-    const updateBalls = (now) => {
+    const updateBalls =
+        (now) => {
 
-        const balls =
-            ballsRef.current;
-
-
-        const hands =
-            handsRef.current;
+            const balls =
+                ballsRef.current;
 
 
-        const currentlyHoldingHands =
-            new Set();
+            const hands =
+                handsRef.current;
 
 
-        // ==================================================
-        // 이미 잡힌 공
-        // ==================================================
-
-        balls.forEach((ball) => {
+            // ------------------------------------------
+            // 움직이는 목표
+            // ------------------------------------------
 
             if (
-                !ball.grabbed
+                mission.type ===
+                "MOVING_TARGET"
             ) {
-                return;
+
+                const target =
+                    movingTargetRef.current;
+
+                target.x += target.vx;
+                target.y += target.vy;
+
+                if (target.x > 0.78 || target.x < 0.22) {
+                    target.vx *= -1;
+                    target.x = Math.max(0.22, Math.min(0.78, target.x));
+                }
+
+                if (target.y > 0.58 || target.y < 0.25) {
+                    target.vy *= -1;
+                    target.y = Math.max(0.25, Math.min(0.58, target.y));
+                }
             }
 
 
-            let hand =
-                hands.find(
-                    (item) =>
-                        item.id ===
-                        ball.grabbedBy
+            // ------------------------------------------
+            // 타임어택 시간
+            // ------------------------------------------
+
+            if (
+                mission.type ===
+                "TIME_ATTACK" &&
+                missionStartTimeRef.current
+            ) {
+
+                const elapsed =
+                    Math.floor(
+                        (
+                            now -
+                            missionStartTimeRef.current
+                        ) /
+                        1000
+                    );
+
+
+                const remaining =
+                    Math.max(
+                        0,
+                        CONFIG.timeAttackDuration - elapsed
+                    );
+
+
+                setMissionRemaining(
+                    remaining
                 );
 
 
-            // ==================================================
-            // 기존 손 ID가 사라졌으면
-            // 가까운 손 다시 검색
-            // ==================================================
+                if (
+                    remaining <= 0
+                ) {
 
-            if (!hand) {
+                    failMission();
 
-                let nearestHand =
-                    null;
-
-
-                let nearestDistance =
-                    Infinity;
+                    return;
+                }
+            }
 
 
-                hands.forEach(
-                    (candidate) => {
+            // ------------------------------------------
+            // 잡힌 공
+            // ------------------------------------------
 
-                        if (
-                            !candidate.fist
-                        ) {
-                            return;
-                        }
+            balls.forEach(
+                ball => {
+
+                    if (
+                        !ball.grabbed
+                    ) {
+
+                        return;
+                    }
 
 
-                        const distance =
-                            getDistance(
-                                candidate,
+                    let hand =
+                        hands.find(
+                            candidate =>
+                                candidate.id ===
+                                ball.grabbedBy
+                        );
+
+
+                    // 잡고 있던 손이 사라지면 다른 손으로 자동 승계하지 않는다.
+                    // 이 승계 로직이 두 손이 공을 뺏거나 한 손으로 여러 공을 잡는
+                    // 원인이 될 수 있으므로 제거한다.
+
+                    // 손 완전 소실
+                    if (!hand) {
+
+                        ball.grabbed =
+                            false;
+
+                        ball.grabbedBy =
+                            null;
+
+                        ball.releaseStartTime =
+                            null;
+
+                        return;
+                    }
+
+
+                    // ----------------------------------
+                    // 주먹 유지
+                    // ----------------------------------
+
+                    if (
+                        hand.fist
+                    ) {
+
+                        ball.releaseStartTime =
+                            null;
+
+
+                        const targetX =
+                            hand.x +
+                            ball.grabOffsetX;
+
+
+                        const targetY =
+                            hand.y +
+                            ball.grabOffsetY;
+
+
+                        ball.x =
+                            lerp(
+                                ball.x,
+                                targetX,
+                                CONFIG.ballFollowSmooth
+                            );
+
+
+                        ball.y =
+                            lerp(
+                                ball.y,
+                                targetY,
+                                CONFIG.ballFollowSmooth
+                            );
+
+
+                        ball.x =
+                            Math.max(
+                                0.05,
+                                Math.min(
+                                    0.95,
+                                    ball.x
+                                )
+                            );
+
+
+                        ball.y =
+                            Math.max(
+                                0.05,
+                                Math.min(
+                                    0.95,
+                                    ball.y
+                                )
+                            );
+
+
+                        return;
+                    }
+
+
+                    // ----------------------------------
+                    // 손을 펴면 놓기
+                    // ----------------------------------
+
+                    if (
+                        ball.releaseStartTime ===
+                        null
+                    ) {
+
+                        ball.releaseStartTime =
+                            now;
+
+                        return;
+                    }
+
+
+                    if (
+                        now -
+                        ball.releaseStartTime >=
+                        CONFIG.releaseDelay
+                    ) {
+
+                        const target =
+                            getTargetZone(
                                 ball
                             );
 
 
-                        if (
-                            distance <
-                            nearestDistance
-                        ) {
+                        ball.grabbed =
+                            false;
 
-                            nearestDistance =
-                                distance;
+                        ball.grabbedBy =
+                            null;
 
-                            nearestHand =
-                                candidate;
-                        }
+                        ball.releaseStartTime =
+                            null;
 
+
+                        handleBallRelease(
+                            ball,
+                            target
+                        );
                     }
-                );
 
-
-                if (
-                    nearestHand &&
-                    nearestDistance <
-                        CONFIG.grabDistance * 2.5
-                ) {
-
-                    hand =
-                        nearestHand;
-
-
-                    ball.grabbedBy =
-                        nearestHand.id;
-
-
-                    ball.grabOffsetX =
-                        ball.x -
-                        nearestHand.x;
-
-
-                    ball.grabOffsetY =
-                        ball.y -
-                        nearestHand.y;
                 }
-            }
-
-
-            // ==================================================
-            // 손을 완전히 놓쳤으면
-            // 공은 현재 위치에서 멈춤
-            // ==================================================
-
-            if (!hand) {
-                return;
-            }
-
-
-            currentlyHoldingHands.add(
-                hand.id
             );
 
 
-            // ==================================================
-            // 주먹 유지
-            // ==================================================
+            // ------------------------------------------
+            // 아직 안 잡힌 공
+            // ------------------------------------------
+            // 한 손은 한 공만 잡을 수 있고,
+            // 반드시 "펴진 손 -> 주먹" 전환 순간에만 잡는다.
+            // 주먹을 쥔 채 이동하면 절대로 새 공을 잡지 않는다.
 
-            if (
-                hand.fist
-            ) {
+            const occupiedHandIds = new Set(
+                balls
+                    .filter(ball => ball.grabbed && ball.grabbedBy)
+                    .map(ball => ball.grabbedBy)
+            );
 
-                ball.releaseStartTime =
-                    null;
+            const availableHands = hands
+                .filter(hand => hand.fistJustClosed)
+                .filter(hand => !occupiedHandIds.has(hand.id));
 
+            availableHands.forEach(hand => {
 
-                ball.targetX =
-                    hand.x +
-                    ball.grabOffsetX;
+                let nearestBall = null;
+                let nearestDistance = Infinity;
 
+                balls.forEach(ball => {
 
-                ball.targetY =
-                    hand.y +
-                    ball.grabOffsetY;
+                    if (
+                        ball.grabbed ||
+                        ball.x < 0
+                    ) {
+                        return;
+                    }
 
+                    const distance =
+                        getDistance(
+                            hand,
+                            ball
+                        );
 
-                ball.x =
-                    lerp(
-                        ball.x,
-                        ball.targetX,
-                        CONFIG.ballFollowSmooth
-                    );
+                    if (
+                        distance < nearestDistance
+                    ) {
+                        nearestDistance = distance;
+                        nearestBall = ball;
+                    }
+                });
 
+                // 주먹을 접은 바로 그 순간 공 위에 있어야 한다.
+                if (
+                    nearestBall &&
+                    nearestDistance < CONFIG.grabDistance
+                ) {
 
-                ball.y =
-                    lerp(
-                        ball.y,
-                        ball.targetY,
-                        CONFIG.ballFollowSmooth
-                    );
+                    // 순서 미션은 틀린 공을 잡는 순간 실패
+                    if (
+                        mission.type ===
+                        "SEQUENCE"
+                    ) {
 
+                        const sequence = [
+                            "purple",
+                            "blue",
+                            "gray",
+                        ];
 
-                return;
-            }
-
-
-            // ==================================================
-            // 손을 펴면 놓기
-            // ==================================================
-
-            if (
-                ball.releaseStartTime ===
-                null
-            ) {
-
-                ball.releaseStartTime =
-                    now;
-
-                return;
-            }
-
-
-            const releaseDuration =
-                now -
-                ball.releaseStartTime;
-
-
-            if (
-                releaseDuration >=
-                CONFIG.releaseDelay
-            ) {
-
-                ball.grabbed =
-                    false;
-
-
-                ball.grabbedBy =
-                    null;
-
-
-                ball.releaseStartTime =
-                    null;
-
-
-                setScore(
-                    (prev) =>
-                        prev + 1
-                );
-
-
-                setStep(
-                    (prev) => {
+                        const expected =
+                            sequence[
+                                sequenceIndexRef.current
+                            ];
 
                         if (
-                            prev >= 4
+                            nearestBall.type !==
+                            expected
                         ) {
-                            return 1;
+                            failMission();
+                            return;
                         }
-
-                        return prev + 1;
                     }
-                );
 
+                    nearestBall.grabbed = true;
+                    nearestBall.grabbedBy = hand.id;
+                    nearestBall.grabOffsetX =
+                        nearestBall.x - hand.x;
+                    nearestBall.grabOffsetY =
+                        nearestBall.y - hand.y;
 
-                // ==================================================
-                // 놓은 공은 화면 아래쪽에서도 등장 가능
-                // ==================================================
-
-                ball.x =
-                    0.15 +
-                    Math.random() * 0.70;
-
-
-                ball.y =
-                    0.20 +
-                    Math.random() * 0.65;
-
-
-                ball.targetX =
-                    ball.x;
-
-
-                ball.targetY =
-                    ball.y;
-            }
-
-        });
-
-
-        // ==================================================
-        // 아직 잡히지 않은 공
-        // ==================================================
-
-        balls.forEach((ball) => {
-
-            if (
-                ball.grabbed
-            ) {
-                return;
-            }
-
-
-            let nearestHand =
-                null;
-
-
-            let nearestDistance =
-                Infinity;
-
-
-            hands.forEach((hand) => {
-
-                // 이미 다른 공을 잡고 있는 손
-                if (
-                    currentlyHoldingHands.has(
-                        hand.id
-                    )
-                ) {
-                    return;
+                    occupiedHandIds.add(hand.id);
                 }
-
-
-                // 주먹이 아니면 잡을 수 없음
-                if (
-                    !hand.fist
-                ) {
-                    return;
-                }
-
-
-                const distance =
-                    getDistance(
-                        hand,
-                        ball
-                    );
-
-
-                if (
-                    distance <
-                    nearestDistance
-                ) {
-
-                    nearestDistance =
-                        distance;
-
-
-                    nearestHand =
-                        hand;
-                }
-
             });
+        };
 
 
-            // ==================================================
-            // 반드시
-            // 주먹 + 공 위
-            // 두 조건을 만족해야 잡힘
-            // ==================================================
+
+    // ==================================================
+
+    const drawBall =
+        (
+            ctx,
+            ball,
+            width,
+            height
+        ) => {
 
             if (
-                nearestHand &&
-                nearestHand.fist &&
-                nearestDistance <
-                    CONFIG.grabDistance
+                ball.x < 0 ||
+                ball.y < 0
             ) {
 
-                ball.grabbed =
-                    true;
-
-
-                ball.grabbedBy =
-                    nearestHand.id;
-
-
-                ball.releaseStartTime =
-                    null;
-
-
-                ball.grabOffsetX =
-                    ball.x -
-                    nearestHand.x;
-
-
-                ball.grabOffsetY =
-                    ball.y -
-                    nearestHand.y;
-
-
-                currentlyHoldingHands.add(
-                    nearestHand.id
-                );
+                return;
             }
 
-        });
-    };
+
+            const x =
+                ball.x *
+                width;
 
 
-    // ==================================================
-    // 공 그리기
-    // ==================================================
-
-    const drawBall = (
-        ctx,
-        ball,
-        width,
-        height
-    ) => {
-
-        const x =
-            ball.x * width;
+            const y =
+                ball.y *
+                height;
 
 
-        const y =
-            ball.y * height;
+            const radius =
+                ball.radius;
 
 
-        const radius =
-            ball.radius;
+            const type =
+                BALL_TYPES[
+                    ball.type
+                ];
 
 
-        ctx.save();
+            ctx.save();
 
-
-        // 그림자
-
-        ctx.beginPath();
-
-        ctx.arc(
-            x,
-            y,
-            radius,
-            0,
-            Math.PI * 2
-        );
-
-
-        ctx.shadowColor =
-            "rgba(0,0,0,0.45)";
-
-
-        ctx.shadowBlur =
-            16;
-
-
-        const gradient =
-            ctx.createRadialGradient(
-                x - radius * 0.35,
-                y - radius * 0.35,
-                radius * 0.08,
-
-                x,
-                y,
-                radius
-            );
-
-
-        gradient.addColorStop(
-            0,
-            "#F4FAFF"
-        );
-
-
-        gradient.addColorStop(
-            0.22,
-            ball.color
-        );
-
-
-        gradient.addColorStop(
-            0.75,
-            ball.color
-        );
-
-
-        gradient.addColorStop(
-            1,
-            "#4D5660"
-        );
-
-
-        ctx.fillStyle =
-            gradient;
-
-
-        ctx.fill();
-
-
-        ctx.restore();
-
-
-        // 하이라이트
-
-        ctx.beginPath();
-
-        ctx.arc(
-            x - radius * 0.28,
-            y - radius * 0.30,
-            radius * 0.055,
-            0,
-            Math.PI * 2
-        );
-
-
-        ctx.fillStyle =
-            "rgba(255,255,255,0.85)";
-
-
-        ctx.fill();
-
-
-        // 잡힌 공 표시
-
-        if (
-            ball.grabbed
-        ) {
 
             ctx.beginPath();
+
 
             ctx.arc(
                 x,
                 y,
-                radius + 7,
+                radius,
                 0,
                 Math.PI * 2
             );
 
 
-            ctx.strokeStyle =
-                "rgba(255,255,255,0.8)";
+            ctx.shadowColor =
+                "rgba(0,0,0,0.45)";
+
+            ctx.shadowBlur =
+                16;
 
 
-            ctx.lineWidth =
-                2;
+            const gradient =
+                ctx.createRadialGradient(
 
+                    x -
+                        radius *
+                        0.35,
 
-            ctx.stroke();
-        }
-    };
+                    y -
+                        radius *
+                        0.35,
 
+                    radius *
+                        0.08,
 
-    // ==================================================
-    // 손 포인터
-    // ==================================================
-
-    const drawHandPoints = (
-        ctx,
-        width,
-        height
-    ) => {
-
-        handsRef.current.forEach(
-            (hand) => {
-
-                const x =
-                    hand.x * width;
-
-
-                const y =
-                    hand.y * height;
-
-
-                // ======================================
-                // 바깥 원
-                // ======================================
-
-                ctx.beginPath();
-
-                ctx.arc(
                     x,
+
                     y,
-                    14,
-                    0,
-                    Math.PI * 2
+
+                    radius
+
                 );
 
 
-                ctx.fillStyle =
-                    hand.fist
-                        ? "rgba(233,155,155,0.14)"
-                        : "rgba(255,255,255,0.08)";
+            gradient.addColorStop(
+                0,
+                "#FFFFFF"
+            );
 
 
-                ctx.fill();
+            gradient.addColorStop(
+                0.18,
+                type.color
+            );
 
 
-                // ======================================
-                // 중심 포인터
-                // ======================================
+            gradient.addColorStop(
+                0.75,
+                type.color
+            );
+
+
+            gradient.addColorStop(
+                1,
+                "#4D5660"
+            );
+
+
+            ctx.fillStyle =
+                gradient;
+
+
+            ctx.fill();
+
+
+            ctx.restore();
+
+
+            // 하이라이트
+
+            ctx.beginPath();
+
+
+            ctx.arc(
+                x -
+                    radius *
+                    0.28,
+
+                y -
+                    radius *
+                    0.30,
+
+                radius *
+                    0.055,
+
+                0,
+                Math.PI * 2
+            );
+
+
+            ctx.fillStyle =
+                "rgba(255,255,255,0.85)";
+
+
+            ctx.fill();
+
+
+            // 잡힌 공
+
+            if (
+                ball.grabbed
+            ) {
 
                 ctx.beginPath();
+
 
                 ctx.arc(
                     x,
                     y,
-                    5,
-                    0,
-                    Math.PI * 2
-                );
-
-
-                ctx.fillStyle =
-                    hand.fist
-                        ? "#E99B9B"
-                        : "#FFFFFF";
-
-
-                ctx.fill();
-
-
-                // ======================================
-                // 포인터 테두리
-                // ======================================
-
-                ctx.beginPath();
-
-                ctx.arc(
-                    x,
-                    y,
-                    8,
+                    radius + 8,
                     0,
                     Math.PI * 2
                 );
 
 
                 ctx.strokeStyle =
-                    hand.fist
-                        ? "rgba(233,155,155,0.8)"
-                        : "rgba(255,255,255,0.75)";
+                    "rgba(255,255,255,0.85)";
 
 
-                ctx.lineWidth =
-                    1.5;
+                ctx.lineWidth = 2;
 
 
                 ctx.stroke();
+            }
+        };
 
 
-                // ======================================
-                // 가장 가까운 공
-                // ======================================
+    // ==================================================
+    // 목표 영역 그리기
+    // ==================================================
 
-                let targetBall =
-                    null;
+    const drawTarget =
+        (
+            ctx,
+            target,
+            width,
+            height,
+            label
+        ) => {
+
+            const x =
+                target.x *
+                width;
 
 
-                let nearestDistance =
-                    Infinity;
+            const y =
+                target.y *
+                height;
 
 
-                ballsRef.current.forEach(
-                    (ball) => {
+            const radius =
+                target.radius *
+                Math.min(
+                    width,
+                    height
+                );
 
-                        const ballX =
-                            ball.x *
+
+            ctx.save();
+
+
+            ctx.beginPath();
+
+
+            ctx.arc(
+                x,
+                y,
+                radius,
+                0,
+                Math.PI * 2
+            );
+
+
+            ctx.fillStyle =
+                `${target.color}55`;
+
+
+            ctx.fill();
+
+
+            ctx.strokeStyle =
+                target.color;
+
+
+            ctx.lineWidth = 3;
+
+
+            ctx.setLineDash([
+                7,
+                6
+            ]);
+
+
+            ctx.stroke();
+
+
+            ctx.setLineDash([]);
+
+
+            if (
+                label
+            ) {
+
+                ctx.fillStyle =
+                    "rgba(255,255,255,0.8)";
+
+
+                ctx.font =
+                    "12px Arial";
+
+
+                ctx.textAlign =
+                    "center";
+
+
+                ctx.textBaseline =
+                    "middle";
+
+
+                ctx.fillText(
+                    label,
+                    x,
+                    y
+                );
+            }
+
+
+            ctx.restore();
+        };
+
+
+    // ==================================================
+    // 손 포인터
+    // ==================================================
+
+    const drawHands =
+        (
+            ctx,
+            width,
+            height
+        ) => {
+
+            handsRef.current
+                .forEach(
+                    hand => {
+
+                        const x =
+                            hand.x *
                             width;
 
 
-                        const ballY =
-                            ball.y *
+                        const y =
+                            hand.y *
                             height;
 
 
-                        const distance =
-                            Math.sqrt(
-                                Math.pow(
-                                    x -
-                                    ballX,
-                                    2
-                                ) +
-                                Math.pow(
-                                    y -
-                                    ballY,
-                                    2
-                                )
+                        ctx.beginPath();
+
+
+                        ctx.arc(
+                            x,
+                            y,
+                            14,
+                            0,
+                            Math.PI * 2
+                        );
+
+
+                        ctx.fillStyle =
+                            hand.fist
+                                ? "rgba(233,155,155,0.18)"
+                                : "rgba(255,255,255,0.08)";
+
+
+                        ctx.fill();
+
+
+                        ctx.beginPath();
+
+
+                        ctx.arc(
+                            x,
+                            y,
+                            5,
+                            0,
+                            Math.PI * 2
+                        );
+
+
+                        ctx.fillStyle =
+                            hand.fist
+                                ? "#E99B9B"
+                                : "#FFFFFF";
+
+
+                        ctx.fill();
+
+
+                        ctx.beginPath();
+
+
+                        ctx.arc(
+                            x,
+                            y,
+                            8,
+                            0,
+                            Math.PI * 2
+                        );
+
+
+                        ctx.strokeStyle =
+                            hand.fist
+                                ? "#E99B9B"
+                                : "rgba(255,255,255,0.8)";
+
+
+                        ctx.lineWidth = 1.5;
+
+
+                        ctx.stroke();
+
+
+                        // 공과 가까우면 연결선
+
+                        let nearestBall =
+                            null;
+
+
+                        let nearestDistance =
+                            Infinity;
+
+
+                        ballsRef.current
+                            .forEach(
+                                ball => {
+
+                                    if (
+                                        ball.x <
+                                        0
+                                    ) {
+
+                                        return;
+                                    }
+
+
+                                    const distance =
+                                        getDistance(
+                                            hand,
+                                            ball
+                                        );
+
+
+                                    if (
+                                        distance <
+                                        nearestDistance
+                                    ) {
+
+                                        nearestDistance =
+                                            distance;
+
+                                        nearestBall =
+                                            ball;
+                                    }
+
+                                }
                             );
 
 
                         if (
-                            distance <
-                            nearestDistance
+                            nearestBall &&
+                            nearestDistance <
+                            0.13
                         ) {
 
-                            nearestDistance =
-                                distance;
+                            const ballX =
+                                nearestBall.x *
+                                width;
 
 
-                            targetBall =
-                                ball;
+                            const ballY =
+                                nearestBall.y *
+                                height;
+
+
+                            ctx.beginPath();
+
+
+                            ctx.moveTo(
+                                x,
+                                y
+                            );
+
+
+                            ctx.lineTo(
+                                ballX,
+                                ballY
+                            );
+
+
+                            ctx.strokeStyle =
+                                "rgba(255,255,255,0.3)";
+
+
+                            ctx.lineWidth = 1;
+
+
+                            ctx.setLineDash([
+                                4,
+                                5
+                            ]);
+
+
+                            ctx.stroke();
+
+
+                            ctx.setLineDash([]);
+
                         }
+
+                    }
+                );
+        };
+
+
+    // ==================================================
+    // 캔버스
+    // ==================================================
+
+    const renderGame =
+        () => {
+
+            const canvas =
+                canvasRef.current;
+
+
+            if (!canvas) {
+                return;
+            }
+
+
+            const container =
+                canvas.parentElement;
+
+
+            if (!container) {
+                return;
+            }
+
+
+            const width =
+                container.clientWidth;
+
+
+            const height =
+                container.clientHeight;
+
+
+            const dpr =
+                window.devicePixelRatio ||
+                1;
+
+
+            if (
+                canvas.width !==
+                width * dpr ||
+                canvas.height !==
+                height * dpr
+            ) {
+
+                canvas.width =
+                    width * dpr;
+
+                canvas.height =
+                    height * dpr;
+
+                canvas.style.width =
+                    `${width}px`;
+
+                canvas.style.height =
+                    `${height}px`;
+
+            }
+
+
+            const ctx =
+                canvas.getContext(
+                    "2d"
+                );
+
+
+            ctx.setTransform(
+                dpr,
+                0,
+                0,
+                dpr,
+                0,
+                0
+            );
+
+
+            ctx.clearRect(
+                0,
+                0,
+                width,
+                height
+            );
+
+
+            // =========================================
+            // 목표
+            // =========================================
+
+            if (
+                mission.type ===
+                "COLOR_SORT"
+            ) {
+
+                drawTarget(
+                    ctx,
+                    {
+                        x: 0.25,
+                        y: 0.78,
+                        radius: 0.09,
+                        color:
+                            "#7C73A7",
+                    },
+                    width,
+                    height,
+                    "보라"
+                );
+
+
+                drawTarget(
+                    ctx,
+                    {
+                        x: 0.50,
+                        y: 0.78,
+                        radius: 0.09,
+                        color:
+                            "#8EA9B8",
+                    },
+                    width,
+                    height,
+                    "파랑"
+                );
+
+
+                drawTarget(
+                    ctx,
+                    {
+                        x: 0.75,
+                        y: 0.78,
+                        radius: 0.09,
+                        color:
+                            "#9A9A9A",
+                    },
+                    width,
+                    height,
+                    "회색"
+                );
+
+            }
+
+
+            if (
+                mission.type ===
+                "MOVING_TARGET"
+            ) {
+
+                drawTarget(
+                    ctx,
+                    movingTargetRef.current,
+                    width,
+                    height,
+                    "TARGET"
+                );
+
+            }
+
+
+            if (
+                mission.type ===
+                "SAME_COLOR"
+            ) {
+
+                drawTarget(
+                    ctx,
+                    {
+                        x: 0.5,
+                        y: 0.78,
+                        radius: 0.13,
+                        color:
+                            BALL_TYPES[
+                                sameColorTargetTypeRef.current
+                            ].color,
+                    },
+                    width,
+                    height,
+                    "모으기"
+                );
+
+            }
+
+
+            if (
+                mission.type ===
+                "TIME_ATTACK"
+            ) {
+
+                drawTarget(
+                    ctx,
+                    {
+                        x: 0.5,
+                        y: 0.76,
+                        radius: 0.12,
+                        color:
+                            "#8EA9B8",
+                    },
+                    width,
+                    height,
+                    "GOAL"
+                );
+
+            }
+
+
+            // =========================================
+            // 공
+            // =========================================
+
+            ballsRef.current
+                .forEach(
+                    ball => {
+
+                        drawBall(
+                            ctx,
+                            ball,
+                            width,
+                            height
+                        );
 
                     }
                 );
 
 
-                // ======================================
-                // 공 근처일 때 시각적 표시
-                // ======================================
-
-                if (
-                    targetBall &&
-                    nearestDistance <
-                        targetBall.radius * 1.35
-                ) {
-
-                    const ballX =
-                        targetBall.x *
-                        width;
-
-
-                    const ballY =
-                        targetBall.y *
-                        height;
-
-
-                    // 연결선
-
-                    ctx.beginPath();
-
-                    ctx.moveTo(
-                        x,
-                        y
-                    );
-
-
-                    ctx.lineTo(
-                        ballX,
-                        ballY
-                    );
-
-
-                    ctx.strokeStyle =
-                        targetBall.grabbed
-                            ? "rgba(255,255,255,0.6)"
-                            : "rgba(255,255,255,0.25)";
-
-
-                    ctx.lineWidth =
-                        1;
-
-
-                    ctx.setLineDash([
-                        4,
-                        5
-                    ]);
-
-
-                    ctx.stroke();
-
-
-                    ctx.setLineDash([]);
-
-
-                    // 공 주변 링
-
-                    ctx.beginPath();
-
-                    ctx.arc(
-                        ballX,
-                        ballY,
-                        targetBall.radius + 8,
-                        0,
-                        Math.PI * 2
-                    );
-
-
-                    ctx.strokeStyle =
-                        targetBall.grabbed
-                            ? "rgba(255,255,255,0.85)"
-                            : (
-                                hand.fist
-                                    ? "rgba(233,155,155,0.7)"
-                                    : "rgba(255,255,255,0.35)"
-                            );
-
-
-                    ctx.lineWidth =
-                        1.5;
-
-
-                    ctx.stroke();
-                }
-
-            }
-        );
-    };
-
-
-    // ==================================================
-    // Canvas 렌더링
-    // ==================================================
-
-    const renderGame = () => {
-
-        const canvas =
-            canvasRef.current;
-
-
-        if (!canvas) {
-            return;
-        }
-
-
-        const container =
-            canvas.parentElement;
-
-
-        if (!container) {
-            return;
-        }
-
-
-        const width =
-            container.clientWidth;
-
-
-        const height =
-            container.clientHeight;
-
-
-        if (
-            width <= 0 ||
-            height <= 0
-        ) {
-            return;
-        }
-
-
-        const dpr =
-            window.devicePixelRatio || 1;
-
-
-        if (
-            canvas.width !== width * dpr ||
-            canvas.height !== height * dpr
-        ) {
-
-            canvas.width =
-                width * dpr;
-
-
-            canvas.height =
-                height * dpr;
-
-
-            canvas.style.width =
-                `${width}px`;
-
-
-            canvas.style.height =
-                `${height}px`;
-        }
-
-
-        const ctx =
-            canvas.getContext("2d");
-
-
-        ctx.setTransform(
-            dpr,
-            0,
-            0,
-            dpr,
-            0,
-            0
-        );
-
-
-        ctx.clearRect(
-            0,
-            0,
-            width,
-            height
-        );
-
-
-        // 공
-
-        ballsRef.current.forEach(
-            (ball) => {
-
-                drawBall(
-                    ctx,
-                    ball,
-                    width,
-                    height
-                );
-
-            }
-        );
-
-
-        // 손 포인터
-
-        drawHandPoints(
-            ctx,
-            width,
-            height
-        );
-    };
+            // =========================================
+            // 손
+            // =========================================
+
+            drawHands(
+                ctx,
+                width,
+                height
+            );
+        };
 
 
     // ==================================================
     // 게임 루프
     // ==================================================
 
-    const gameLoop = (
-        timestamp
-    ) => {
+    const gameLoop =
+        (timestamp) => {
 
-        if (
-            isRunning
-        ) {
+            if (isRunning) {
 
-            detectHands(
-                timestamp
-            );
+                detectHands(
+                    timestamp
+                );
 
 
-            updateBalls(
-                timestamp
-            );
-        }
+                updateBalls(
+                    timestamp
+                );
+            }
 
 
-        renderGame();
+            renderGame();
 
 
-        animationRef.current =
-            requestAnimationFrame(
-                gameLoop
-            );
-    };
+            animationRef.current =
+                requestAnimationFrame(
+                    gameLoop
+                );
+        };
 
 
     // ==================================================
     // 초기화
     // ==================================================
 
-    useEffect(() => {
+    useEffect(
+        () => {
 
-        let mounted = true;
+            let mounted = true;
 
 
-        const initialize =
-            async () => {
+            const initialize =
+                async () => {
 
-                await initializeMediaPipe();
+                    await initializeMediaPipe();
+
+
+                    if (
+                        mounted
+                    ) {
+
+                        await startCamera();
+                    }
+
+                };
+
+
+            initialize();
+
+
+            return () => {
+
+                mounted = false;
 
 
                 if (
-                    mounted
+                    animationRef.current
                 ) {
 
-                    await startCamera();
+                    cancelAnimationFrame(
+                        animationRef.current
+                    );
+
+                }
+
+
+                if (
+                    streamRef.current
+                ) {
+
+                    streamRef.current
+                        .getTracks()
+                        .forEach(
+                            track =>
+                                track.stop()
+                        );
+
                 }
 
             };
 
+        },
+        []
+    );
 
-        initialize();
 
+    // ==================================================
+    // 게임 시작
+    // ==================================================
 
-        return () => {
-
-            mounted =
-                false;
-
+    useEffect(
+        () => {
 
             if (
-                animationRef.current
+                !cameraReady
             ) {
 
-                cancelAnimationFrame(
-                    animationRef.current
+                return;
+            }
+
+
+            animationRef.current =
+                requestAnimationFrame(
+                    gameLoop
                 );
-            }
 
 
-            if (
-                streamRef.current
-            ) {
+            return () => {
 
-                streamRef.current
-                    .getTracks()
-                    .forEach(
-                        (track) =>
-                            track.stop()
-                    );
-            }
-
-        };
-
-    }, []);
-
-
-    // ==================================================
-    // 게임 루프 시작
-    // ==================================================
-
-    useEffect(() => {
-
-        if (
-            !cameraReady
-        ) {
-            return;
-        }
-
-
-        animationRef.current =
-            requestAnimationFrame(
-                gameLoop
-            );
-
-
-        return () => {
-
-            if (
-                animationRef.current
-            ) {
-
-                cancelAnimationFrame(
+                if (
                     animationRef.current
-                );
-            }
+                ) {
 
-        };
-
-    }, [
-        cameraReady,
-        isRunning,
-    ]);
-
-
-    // ==================================================
-    // 타이머
-    // ==================================================
-
-    useEffect(() => {
-
-        if (
-            !isRunning
-        ) {
-            return;
-        }
-
-
-        const timer =
-            setInterval(
-                () => {
-
-                    setTimeLeft(
-                        (prev) => {
-
-                            if (
-                                prev <= 1
-                            ) {
-
-                                setIsRunning(
-                                    false
-                                );
-
-
-                                return 0;
-                            }
-
-
-                            return prev - 1;
-                        }
+                    cancelAnimationFrame(
+                        animationRef.current
                     );
 
-                },
-                1000
-            );
+                }
+
+            };
+
+        },
+        [
+            cameraReady,
+            isRunning,
+            mission,
+        ]
+    );
 
 
-        return () =>
-            clearInterval(
-                timer
-            );
+    // ==================================================
+    // 전체 시간
+    // ==================================================
 
-    }, [
-        isRunning,
-    ]);
+    useEffect(
+        () => {
+
+            if (!isRunning) {
+
+                return;
+            }
+
+
+            const timer =
+                setInterval(
+                    () => {
+
+                        setElapsedTime(
+                            previous =>
+                                previous + 1
+                        );
+
+                    },
+                    1000
+                );
+
+
+            return () =>
+                clearInterval(
+                    timer
+                );
+
+        },
+        [
+            isRunning,
+            missionStatus,
+        ]
+    );
 
 
     // ==================================================
@@ -2060,46 +3017,120 @@ function RoutineGame() {
     // ==================================================
 
     const resetGame = () => {
-
-        setTimeLeft(180);
-
-        setScore(0);
-
-        setStep(1);
-
-        setIsRunning(true);
-
-
-        handsRef.current =
-            [];
-
-
-        distanceRef.current = {
-            value: 50,
-            status: "적정",
-        };
-
-
-        setScreenDistance({
-            value: 50,
-            status: "적정",
-        });
-
-
-        ballsRef.current =
-            createInitialBalls();
+        setSuccessCount(0);
+        setElapsedTime(0);
+        setMission(getRandomMission(mission.type));
     };
 
 
     // ==================================================
-    // 진행률
+    // 미션 표시
     // ==================================================
 
-    const progress =
-        (
-            (180 - timeLeft) /
-            180
-        ) * 100;
+    const getMissionSubText =
+        () => {
+
+            if (
+                mission.type ===
+                "COLOR_SORT"
+            ) {
+
+                return "공 3개를 각각 같은 색 영역에 넣어보세요";
+
+            }
+
+
+            if (
+                mission.type ===
+                "SEQUENCE"
+            ) {
+
+                return "순서: 보라색 → 파란색 → 회색";
+
+            }
+
+
+            if (
+                mission.type ===
+                "MOVING_TARGET"
+            ) {
+
+                return "공 3개를 움직이는 목표에 모두 넣어보세요";
+
+            }
+
+
+            if (
+                mission.type ===
+                "SAME_COLOR"
+            ) {
+
+                return `${BALL_TYPES[sameColorTargetTypeRef.current].name} 공 3개를 모두 모아보세요`;
+
+            }
+
+
+            if (
+                mission.type ===
+                "TIME_ATTACK"
+            ) {
+
+                return "20초 안에 공 3개를 목표 영역으로 옮겨보세요";
+
+            }
+
+
+            return "";
+        };
+
+
+    // ==================================================
+    // 미션 진행 표시
+    // ==================================================
+
+    const getProgressText =
+        () => {
+
+            if (
+                mission.type ===
+                "COLOR_SORT"
+            ) {
+                return `${missionProgress} / 3`;
+            }
+
+
+            if (
+                mission.type ===
+                "SEQUENCE"
+            ) {
+
+                return `${sequenceIndex} / 3`;
+
+            }
+
+
+            if (
+                mission.type ===
+                "SAME_COLOR"
+            ) {
+
+                return `${missionProgress} / 3`;
+
+            }
+
+
+            if (
+                mission.type ===
+                "TIME_ATTACK"
+            ) {
+
+                return `${missionProgress} / 3`;
+
+            }
+
+
+            return "";
+        };
 
 
     // ==================================================
@@ -2110,15 +3141,16 @@ function RoutineGame() {
 
         <div className="routine-game">
 
+
             {/* =========================================
-                GAME CONTAINER
+                게임
             ========================================= */}
 
             <div className="game-container">
 
 
                 {/* =====================================
-                    CAMERA
+                    카메라
                 ===================================== */}
 
                 <div className="camera-preview">
@@ -2144,7 +3176,7 @@ function RoutineGame() {
 
 
                 {/* =====================================
-                    TIMER
+                    지속 시간
                 ===================================== */}
 
                 <div className="live-time">
@@ -2154,17 +3186,18 @@ function RoutineGame() {
                     지속 시간{" "}
 
                     {formatTime(
-                        timeLeft
+                        elapsedTime
                     )}
 
                 </div>
 
 
                 {/* =====================================
-                    REALTIME DATA
+                    실시간 데이터
                 ===================================== */}
 
                 <div className="data-area">
+
 
                     <div className="data-card">
 
@@ -2178,12 +3211,11 @@ function RoutineGame() {
                             <div>
 
                                 <span>
-                                    잡은 공
+                                    성공한 미션
                                 </span>
 
-
                                 <strong>
-                                    {score}번
+                                    {successCount}
                                 </strong>
 
                             </div>
@@ -2194,7 +3226,6 @@ function RoutineGame() {
                                 <span>
                                     손 인식
                                 </span>
-
 
                                 <strong>
                                     {handCount}
@@ -2207,9 +3238,7 @@ function RoutineGame() {
                     </div>
 
 
-                    {/* =================================
-                        DISTANCE
-                    ================================= */}
+                    {/* 거리 */}
 
                     <div className="distance-card">
 
@@ -2228,9 +3257,11 @@ function RoutineGame() {
                                         : "distance-warning"
                                 }
                             >
+
                                 {
                                     screenDistance.status
                                 }
+
                             </strong>
 
                         </div>
@@ -2267,12 +3298,12 @@ function RoutineGame() {
 
                     </div>
 
+
                 </div>
 
 
                 {/* =====================================
-                    GAME AREA
-                    여기 영역이 크게 확장됨
+                    게임 영역
                 ===================================== */}
 
                 <div className="play-area">
@@ -2285,22 +3316,31 @@ function RoutineGame() {
 
 
                 {/* =====================================
-                    GUIDE
+                    하단 자막
                 ===================================== */}
 
                 <div className="instruction">
 
-                    주먹을 쥔 상태로 공에 가져가세요
+                    <span className="mission-text">
 
-                    <span>
-                        {" "}· 손을 펴면 공을 놓습니다
+                        {mission.title}
+
+                    </span>
+
+
+                    <span className="instruction-sub">
+
+                        {" "}·{" "}
+
+                        {getMissionSubText()}
+
                     </span>
 
                 </div>
 
 
                 {/* =====================================
-                    PROGRESS
+                    진행바
                 ===================================== */}
 
                 <div className="progress-section">
@@ -2311,16 +3351,41 @@ function RoutineGame() {
                             className="progress-fill"
                             style={{
                                 width:
-                                    `${progress}%`,
-                            }}
-                        />
+                                    `${
+                                        mission.type ===
+                                        "COLOR_SORT"
 
+                                            ? (
+                                                missionProgress /
+                                                3
+                                            ) * 100
 
-                        <div
-                            className="progress-dot"
-                            style={{
-                                left:
-                                    `${progress}%`,
+                                            : mission.type ===
+                                        "SEQUENCE"
+
+                                            ? (
+                                                sequenceIndex /
+                                                3
+                                            ) * 100
+
+                                            : mission.type ===
+                                              "SAME_COLOR"
+
+                                                ? (
+                                                    missionProgress /
+                                                    3
+                                                ) * 100
+
+                                                : mission.type ===
+                                                  "TIME_ATTACK"
+
+                                                    ? (
+                                                        missionProgress /
+                                                        3
+                                                    ) * 100
+
+                                                    : 20
+                                    }%`,
                             }}
                         />
 
@@ -2349,12 +3414,12 @@ function RoutineGame() {
 
                 </div>
 
+
             </div>
 
 
             {/* =========================================
-                CONTROL
-                게임 화면 아래로 내려감
+                컨트롤
             ========================================= */}
 
             <div className="control-area">
@@ -2371,9 +3436,11 @@ function RoutineGame() {
 
                 <button
                     className="reset-button"
-                    onClick={resetGame}
+                    onClick={
+                        resetGame
+                    }
                 >
-                    초기화
+                    다른 미션
                 </button>
 
             </div>
@@ -2390,27 +3457,30 @@ function RoutineGame() {
                 }
 
 
-                /* ======================================
-                   전체
-                ====================================== */
+                body {
+                    margin: 0;
+                    background: #17181d;
+                }
+
 
                 .routine-game {
 
-                    width: 100%;
+                    width: 100vw;
 
-                    max-width: 1300px;
+                    min-height: 100vh;
 
-                    margin: 0 auto;
+                    margin-left:
+                        calc(50% - 50vw);
 
-                    padding:
-                        24px 30px 40px;
+                    background:
+                        #17181d;
 
                     color: white;
                 }
 
 
                 /* ======================================
-                   게임 화면
+                   게임
                 ====================================== */
 
                 .game-container {
@@ -2419,19 +3489,15 @@ function RoutineGame() {
 
                     width: 100%;
 
-                    /*
-                     * 기존 470px
-                     * → 560px
-                     *
-                     * 게임 영역을 크게 사용
-                     */
-                    height: 560px;
+                    height:
+                        calc(100vh - 100px);
+
+                    min-height: 650px;
 
                     overflow: hidden;
 
-                    border-radius: 22px;
-
-                    background: #252525;
+                    background:
+                        #252525;
                 }
 
 
@@ -2443,11 +3509,13 @@ function RoutineGame() {
 
                     position: absolute;
 
-                    left: 20px;
-                    top: 18px;
+                    left: 55px;
 
-                    width: 225px;
-                    height: 135px;
+                    top: 28px;
+
+                    width: 320px;
+
+                    height: 192px;
 
                     overflow: hidden;
 
@@ -2455,13 +3523,14 @@ function RoutineGame() {
 
                     background: #111;
 
-                    z-index: 20;
+                    z-index: 100;
                 }
 
 
                 .camera-video {
 
                     width: 100%;
+
                     height: 100%;
 
                     object-fit: cover;
@@ -2480,6 +3549,7 @@ function RoutineGame() {
                     display: flex;
 
                     align-items: center;
+
                     justify-content: center;
 
                     background: #151515;
@@ -2491,14 +3561,15 @@ function RoutineGame() {
 
 
                 /* ======================================
-                   타이머
+                   시간
                 ====================================== */
 
                 .live-time {
 
                     position: absolute;
 
-                    top: 20px;
+                    top: 30px;
+
                     left: 50%;
 
                     transform:
@@ -2515,7 +3586,8 @@ function RoutineGame() {
 
                     border-radius: 20px;
 
-                    background: #4b4b4b;
+                    background:
+                        #4b4b4b;
 
                     color: #eee;
 
@@ -2530,11 +3602,13 @@ function RoutineGame() {
                 .live-dot {
 
                     width: 8px;
+
                     height: 8px;
 
                     border-radius: 50%;
 
-                    background: #e95353;
+                    background:
+                        #e95353;
                 }
 
 
@@ -2546,10 +3620,11 @@ function RoutineGame() {
 
                     position: absolute;
 
-                    top: 20px;
-                    right: 20px;
+                    top: 28px;
 
-                    width: 175px;
+                    right: 55px;
+
+                    width: 225px;
 
                     display: flex;
 
@@ -2569,7 +3644,8 @@ function RoutineGame() {
 
                     border-radius: 17px;
 
-                    background: #484848;
+                    background:
+                        #484848;
                 }
 
 
@@ -2614,8 +3690,6 @@ function RoutineGame() {
 
                 .data-row strong {
 
-                    color: white;
-
                     font-size: 17px;
                 }
 
@@ -2628,8 +3702,6 @@ function RoutineGame() {
 
                     display: flex;
 
-                    align-items: center;
-
                     justify-content:
                         space-between;
 
@@ -2639,9 +3711,9 @@ function RoutineGame() {
 
                 .distance-header span {
 
-                    color: #ddd;
-
                     font-size: 12px;
+
+                    color: #ddd;
                 }
 
 
@@ -2670,17 +3742,17 @@ function RoutineGame() {
                     position: relative;
 
                     width: 100%;
-                    height: 12px;
+
+                    height: 10px;
 
                     border-radius: 20px;
 
                     background:
                         linear-gradient(
                             90deg,
-                            #e89b9b 0%,
-                            #b7e395 42%,
-                            #b7e395 58%,
-                            #e89b9b 100%
+                            #e89b9b,
+                            #b7e395 50%,
+                            #e89b9b
                         );
                 }
 
@@ -2692,24 +3764,15 @@ function RoutineGame() {
                     top: -5px;
 
                     width: 3px;
-                    height: 22px;
+
+                    height: 20px;
 
                     border-radius: 3px;
 
                     background: white;
 
-                    box-shadow:
-                        0 0 4px
-                        rgba(
-                            255,
-                            255,
-                            255,
-                            0.7
-                        );
-
                     transition:
-                        left 0.18s
-                        ease-out;
+                        left .18s ease-out;
                 }
 
 
@@ -2729,26 +3792,20 @@ function RoutineGame() {
 
 
                 /* ======================================
-                   ★ 공 게임 영역
-                   ====================================== */
+                   플레이 영역
+                ====================================== */
 
                 .play-area {
 
                     position: absolute;
 
-                    left: 20px;
-                    right: 20px;
+                    left: 40px;
 
-                    /*
-                     * 상단 UI 아래에서 시작
-                     */
-                    top: 150px;
+                    right: 40px;
 
-                    /*
-                     * 기존 35px보다 조금 여유를 둠
-                     * 아래쪽까지 공이 움직일 수 있음
-                     */
-                    bottom: 48px;
+                    top: 165px;
+
+                    bottom: 92px;
 
                     overflow: hidden;
                 }
@@ -2756,15 +3813,16 @@ function RoutineGame() {
 
                 .play-area canvas {
 
-                    display: block;
-
                     width: 100%;
+
                     height: 100%;
+
+                    display: block;
                 }
 
 
                 /* ======================================
-                   안내 문구
+                   하단 설명
                 ====================================== */
 
                 .instruction {
@@ -2772,30 +3830,43 @@ function RoutineGame() {
                     position: absolute;
 
                     left: 0;
+
                     right: 0;
 
-                    /*
-                     * 진행바 바로 위
-                     */
-                    bottom: 70px;
+                    bottom: 73px;
+
+                    display: flex;
+
+                    justify-content:
+                        center;
+
+                    align-items: center;
 
                     text-align: center;
 
-                    color: #ddd;
-
-                    font-size: 14px;
-
-                    font-weight: 500;
-
-                    z-index: 10;
-
                     pointer-events: none;
+
+                    white-space: nowrap;
+
+                    z-index: 15;
+
+                    font-size: 15px;
                 }
 
 
-                .instruction span {
+                .mission-text {
 
-                    color: #999;
+                    color: #eee;
+
+                    font-weight: 600;
+                }
+
+
+                .instruction-sub {
+
+                    color: #888;
+
+                    font-weight: 400;
                 }
 
 
@@ -2807,8 +3878,9 @@ function RoutineGame() {
 
                     position: absolute;
 
-                    left: 40px;
-                    right: 40px;
+                    left: 7%;
+
+                    right: 7%;
 
                     bottom: 17px;
                 }
@@ -2816,53 +3888,30 @@ function RoutineGame() {
 
                 .progress-bar {
 
-                    position: relative;
-
                     width: 100%;
+
                     height: 7px;
 
                     border-radius: 10px;
 
-                    background: #d2d2d2;
+                    background:
+                        #d2d2d2;
+
+                    overflow: hidden;
                 }
 
 
                 .progress-fill {
 
-                    position: absolute;
-
-                    left: 0;
-                    top: 0;
-
                     height: 100%;
 
                     border-radius: 10px;
 
-                    background: #557bc5;
+                    background:
+                        #557bc5;
 
                     transition:
-                        width 1s linear;
-                }
-
-
-                .progress-dot {
-
-                    position: absolute;
-
-                    top: 50%;
-
-                    width: 7px;
-                    height: 7px;
-
-                    transform:
-                        translate(
-                            -50%,
-                            -50%
-                        );
-
-                    border-radius: 50%;
-
-                    background: white;
+                        width .3s ease;
                 }
 
 
@@ -2877,15 +3926,17 @@ function RoutineGame() {
 
                     color: #888;
 
-                    font-size: 7px;
+                    font-size: 8px;
                 }
 
 
                 /* ======================================
-                   ★ 종료 / 초기화 영역
+                   버튼
                 ====================================== */
 
                 .control-area {
+
+                    min-height: 100px;
 
                     display: flex;
 
@@ -2896,28 +3947,18 @@ function RoutineGame() {
 
                     gap: 20px;
 
-                    /*
-                     * 게임 화면과 버튼 사이
-                     */
-                    margin-top: 12px;
-
-                    /*
-                     * 버튼 영역을 크게
-                     */
-                    min-height: 90px;
-
-                    padding: 24px;
-
-                    background: #292929;
+                    background:
+                        #292929;
                 }
 
 
                 .control-area button {
 
-                    width: 120px;
-                    height: 42px;
+                    width: 130px;
 
-                    border-radius: 22px;
+                    height: 44px;
+
+                    border-radius: 24px;
 
                     background:
                         transparent;
@@ -2929,9 +3970,6 @@ function RoutineGame() {
                     font-weight: 600;
 
                     cursor: pointer;
-
-                    transition:
-                        background 0.2s;
                 }
 
 
@@ -2959,7 +3997,7 @@ function RoutineGame() {
                             255,
                             255,
                             255,
-                            0.08
+                            .08
                         );
                 }
 
@@ -2972,82 +4010,53 @@ function RoutineGame() {
                     max-width: 750px
                 ) {
 
-                    .routine-game {
-
-                        padding:
-                            15px 15px 30px;
-                    }
-
-
-                    .game-container {
-
-                        /*
-                         * 모바일에서도
-                         * 기존보다 큰 게임 영역
-                         */
-                        height: 520px;
-                    }
-
-
                     .camera-preview {
 
-                        left: 14px;
-                        top: 14px;
+                        left: 20px;
 
-                        width: 180px;
-                        height: 108px;
+                        top: 20px;
+
+                        width: 230px;
+
+                        height: 138px;
                     }
 
 
                     .data-area {
 
-                        top: 12px;
-                        right: 12px;
+                        top: 20px;
 
-                        width: 145px;
+                        right: 20px;
+
+                        width: 155px;
                     }
 
 
                     .play-area {
 
-                        left: 12px;
-                        right: 12px;
+                        left: 15px;
 
-                        top: 130px;
+                        right: 15px;
 
-                        bottom: 45px;
-                    }
+                        top: 140px;
 
-
-                    .progress-section {
-
-                        left: 20px;
-                        right: 20px;
-
-                        bottom: 14px;
+                        bottom: 100px;
                     }
 
 
                     .instruction {
 
-                        bottom: 63px;
+                        bottom: 72px;
+
+                        padding:
+                            0 15px;
+
+                        white-space:
+                            normal;
+
+                        line-height: 1.5;
 
                         font-size: 12px;
-                    }
-
-
-                    .control-area {
-
-                        min-height: 85px;
-
-                        padding: 20px;
-                    }
-
-
-                    .control-area button {
-
-                        width: 105px;
-                        height: 40px;
                     }
 
                 }
