@@ -1,0 +1,387 @@
+:root {
+  --bg-main: #17181d;
+  --bg-game: #252525;
+  --bg-control: #292929;
+  --bg-card: #484848;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: --bg-main;
+  overflow: hidden;
+}
+
+.routine-game {
+  width: 100vw;
+  height: 100vh;
+  margin-left: calc(50% - 50vw);
+  background: --bg-main;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ======================================게임====================================== */
+.game-container {
+  position: relative;
+  width: 100%;
+  flex-grow: 1;
+  overflow: hidden;
+  background: --bg-game;
+}
+
+/* ======================================카메라====================================== */
+.camera-preview {
+  position: absolute;
+  left: 55px;
+  top: 28px;
+  width: 320px;
+  height: 192px;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #111;
+  z-index: 100;
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.camera-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #151515;
+  color: #aaa;
+  font-size: 11px;
+}
+
+/* ======================================시간====================================== */
+.live-time {
+  position: absolute;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 15px;
+  border-radius: 20px;
+  background: #4b4b4b;
+  color: #eee;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 20;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e95353;
+}
+
+/* ======================================데이터====================================== */
+.data-area {
+  position: absolute;
+  top: 28px;
+  right: 55px;
+  width: 225px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 20;
+}
+
+.data-card,
+.distance-card {
+  padding: 14px 16px;
+  border-radius: 17px;
+  background: --bg-card;
+}
+
+.data-title {
+  margin-bottom: 12px;
+  color: #eee;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.data-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.data-row div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.data-row span {
+  color: #aaa;
+  font-size: 8px;
+}
+
+.data-row strong {
+  font-size: 17px;
+}
+
+/* ======================================거리====================================== */
+.distance-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.distance-header span {
+  font-size: 12px;
+  color: #ddd;
+}
+
+.distance-header strong {
+  font-size: 10px;
+}
+
+.distance-good {
+  color: #c8e9a7 !important;
+}
+
+.distance-warning {
+  color: #f1a3a3 !important;
+}
+
+.distance-bar {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  border-radius: 20px;
+  background: linear-gradient(90deg, #e89b9b, #b7e395 50%, #e89b9b);
+}
+
+.distance-marker {
+  position: absolute;
+  top: -5px;
+  width: 3px;
+  height: 20px;
+  border-radius: 3px;
+  background: white;
+  transition: left .18s ease-out;
+}
+
+/* ======================================플레이 영역====================================== */
+.play-area {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  z-index: 5;
+}
+
+.play-area canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ======================================오버레이(팝업)====================================== */
+.overlay-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  backdrop-filter: blur(4px);
+}
+
+.mission-complete-overlay {
+  background-color: rgba(0, 0, 0, 0.75);
+  z-index: 10;
+}
+
+.mission-complete-overlay h2 {
+  font-size: 2.5rem;
+  margin-bottom: 30px;
+  font-weight: bold;
+  margin-top: 0;
+}
+
+.mission-complete-button {
+  padding: 15px 30px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  border-radius: 12px;
+  border: none;
+  background-color: #8EA9B8;
+  color: white;
+  font-weight: bold;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.2s;
+}
+
+.mission-complete-button:hover {
+  opacity: 0.8;
+}
+
+.terminated-overlay {
+  background-color: rgba(0, 0, 0, 0.85);
+  z-index: 20;
+}
+
+.terminated-overlay h2 {
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin-bottom: 15px;
+  margin-top: 0;
+}
+
+.terminated-overlay p {
+  font-size: 1.2rem;
+  opacity: 0.8;
+  margin: 0;
+}
+
+/* ======================================하단 설명====================================== */
+.instruction {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 73px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 15;
+  font-size: 15px;
+}
+
+.mission-text {
+  color: #eee;
+  font-weight: 600;
+}
+
+.instruction-sub {
+  color: #888;
+  font-weight: 400;
+}
+
+/* ======================================진행바====================================== */
+.progress-section {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  bottom: 17px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 7px;
+  border-radius: 10px;
+  background: #d2d2d2;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 10px;
+  background: #557bc5;
+  transition: width .3s ease;
+}
+
+.steps {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: #888;
+  font-size: 8px;
+}
+
+/* ======================================버튼====================================== */
+.control-area {
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: --bg-control;
+}
+
+.control-area button {
+  width: 130px;
+  height: 44px;
+  border-radius: 24px;
+  background: transparent;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stop-button {
+  border: 1px solid #9b4c4c;
+  color: #db6b6b !important;
+}
+
+.reset-button {
+  border: 1px solid #777;
+}
+
+.reset-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.control-area button:hover {
+  background: rgba(255, 255, 255, .08);
+}
+
+/* ======================================모바일====================================== */
+@media (max-width: 750px) {
+  .camera-preview {
+    left: 20px;
+    top: 20px;
+    width: 230px;
+    height: 138px;
+  }
+
+  .data-area {
+    top: 20px;
+    right: 20px;
+    width: 155px;
+  }
+
+  .play-area {
+    left: 15px;
+    right: 15px;
+    top: 140px;
+    bottom: 100px;
+  }
+
+  .instruction {
+    bottom: 72px;
+    padding: 0 15px;
+    white-space: normal;
+    line-height: 1.5;
+    font-size: 12px;
+  }
+}
