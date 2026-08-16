@@ -1,17 +1,10 @@
-:root {
-  --bg-main: #17181d;
-  --bg-game: #252525;
-  --bg-control: #292929;
-  --bg-card: #484848;
-}
-
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  background: --bg-main;
+  background: #17181d;
   overflow: hidden;
 }
 
@@ -19,7 +12,7 @@ body {
   width: 100vw;
   height: 100vh;
   margin-left: calc(50% - 50vw);
-  background: --bg-main;
+  background: #17181d;
   color: white;
   display: flex;
   flex-direction: column;
@@ -32,7 +25,7 @@ body {
   width: 100%;
   flex-grow: 1;
   overflow: hidden;
-  background: --bg-game;
+  background: #252525;
 }
 
 /* ======================================카메라====================================== */
@@ -107,7 +100,7 @@ body {
 .distance-card {
   padding: 14px 16px;
   border-radius: 17px;
-  background: --bg-card;
+  background: #484848;
 }
 
 .data-title {
@@ -322,7 +315,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 20px;
-  background: --bg-control;
+  background: #292929;
 }
 
 .control-area button {
