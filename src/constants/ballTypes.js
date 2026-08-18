@@ -1,14 +1,14 @@
 export const BALL_TYPES = {
-  purple: {
-    name: "보라색",
-    color: "#7C73A7",
+  green: {
+    name: "초록색",
+    color: "#80BA70",
   },
   blue: {
     name: "파란색",
-    color: "#8EA9B8",
+    color: "#ACD3FF",
   },
-  gray: {
-    name: "회색",
-    color: "#9A9A9A",
+  pink: {
+    name: "핑크색",
+    color: "#E891B8",
   },
 };

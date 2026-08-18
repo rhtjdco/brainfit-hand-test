@@ -3,7 +3,7 @@ import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { CONFIG } from "../constants/gameConfig";
 import { getDistance, lerp } from "../utils";
 
-export function useHandTracking() {
+export const useHandTracking = () => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const handLandmarkerRef = useRef(null);
@@ -17,9 +17,6 @@ export function useHandTracking() {
   const [handCount, setHandCount] = useState(0);
   const [screenDistance, setScreenDistance] = useState({ value: 50, status: "적정" });
 
-  // ==================================================
-  // 손바닥 & 주먹 상태 측정
-  // ==================================================
   const getPalmCenter = (landmarks) => {
     const points = [landmarks[0], landmarks[5], landmarks[9], landmarks[13], landmarks[17]];
     let x = 0, y = 0;
@@ -72,19 +69,21 @@ export function useHandTracking() {
     };
   };
 
-  // ==================================================
-  // 카메라 & MediaPipe
-  // ==================================================
   const startCamera = async () => {
     try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
         audio: false,
       });
       streamRef.current = stream;
-      if (!videoRef.current) return;
 
+      if (!videoRef.current) return;
       videoRef.current.srcObject = stream;
+
       await new Promise(resolve => { videoRef.current.onloadedmetadata = resolve; });
       await videoRef.current.play();
       setCameraReady(true);
@@ -94,13 +93,15 @@ export function useHandTracking() {
   };
 
   const initializeMediaPipe = async () => {
+    if (handLandmarkerRef.current) return;
     try {
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
       );
       handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          // 로컬 tflite 모델 파일 경로 지정
+          modelAssetPath: "/hand_detector.tflite",
           delegate: "GPU",
         },
         runningMode: "VIDEO",
@@ -211,13 +212,25 @@ export function useHandTracking() {
   };
 
   const cleanup = () => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+        track.enabled = false;
+      });
       streamRef.current = null;
     }
 
     if (handLandmarkerRef.current) {
-      handLandmarkerRef.current.close();
+      try {
+        handLandmarkerRef.current.close();
+      } catch (e) {
+        console.error("MediaPipe close error:", e);
+      }
       handLandmarkerRef.current = null;
     }
 
@@ -235,4 +248,4 @@ export function useHandTracking() {
     detectHands,
     cleanup,
   };
-};
+}

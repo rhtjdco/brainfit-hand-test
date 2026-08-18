@@ -78,7 +78,7 @@ export const getSafeBallPosition = (existing = []) => {
 
 export const createNormalBalls = () => {
   const balls = [];
-  ["purple", "blue", "gray"].forEach((type, index) => {
+  ["green", "blue", "pink"].forEach((type, index) => {
     const position = getSafeBallPosition(balls);
     balls.push(createBall(`${type}-${index + 1}`, type, position.x, position.y));
   });
@@ -89,7 +89,7 @@ export const createNormalBalls = () => {
 // 같은 색 3개
 // ======================================================
 export const createSameColorBalls = () => {
-  const types = ["purple", "blue", "gray"];
+  const types = ["green", "blue", "pink"];
   const targetType = types[Math.floor(Math.random() * types.length)];
   const balls = [];
 
@@ -111,7 +111,7 @@ export const createSameColorBalls = () => {
 // ======================================================
 export const createMovingTargetBalls = () => {
   const balls = [];
-  ["purple", "blue", "gray"].forEach((type, index) => {
+  ["green", "blue", "pink"].forEach((type, index) => {
     const position = getSafeBallPosition(balls);
     balls.push(createBall(`moving-${type}-${index + 1}`, type, position.x, position.y));
   });
@@ -123,7 +123,7 @@ export const createMovingTargetBalls = () => {
 // ======================================================
 export const createTimeAttackBalls = () => {
   const balls = [];
-  const types = ["purple", "blue", "gray"];
+  const types = ["green", "blue", "pink"];
 
   for (let i = 0; i < 3; i += 1) {
     const type = types[Math.floor(Math.random() * types.length)];
